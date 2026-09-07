@@ -15,6 +15,7 @@ const state = {
   prompt: null,
   targets: { unet: [], text: [], outputs: [] },
   tasks: [],
+  taskOrder: "desc",
   templateDirty: false,
   pollTimer: null,
 };
@@ -307,16 +308,28 @@ function taskStatus(status) {
 function renderTasks() {
   const list = byId("cbo-tasks");
   list.replaceChildren();
-  const recent = state.tasks.slice(-50).reverse();
+  const recent = state.tasks.slice(-50);
+  if (state.taskOrder === "desc") recent.reverse();
+  const orderButton = byId("cbo-task-order");
+  if (orderButton) {
+    const descending = state.taskOrder === "desc";
+    orderButton.textContent = descending ? "新→旧" : "旧→新";
+    orderButton.title = descending ? "当前最新任务在前，点击切换为最早任务在前" : "当前最早任务在前，点击切换为最新任务在前";
+    orderButton.setAttribute("aria-label", orderButton.title);
+  }
   for (const task of recent) {
     const row = document.createElement("div");
-    row.className = `cbo-task ${task.status}`;
-    const main = document.createElement("span");
-    const prefixes = task.filenamePrefixes?.map((output) => `#${output.id}: ${output.prefix}`).join(" | ") || task.filenamePrefix;
-    main.textContent = `#${String(task.index).padStart(3, "0")} ${prefixes}`;
     const status = document.createElement("span");
-    status.textContent = task.error ? `失败：${task.error}` : `${taskStatus(task.status)}${task.promptId ? ` · ${task.promptId.slice(0, 8)}` : ""}`;
-    row.append(main, status);
+    status.className = "cbo-task-status";
+    status.textContent = task.error ? "失败" : taskStatus(task.status);
+    if (task.error) status.title = task.error;
+    const main = document.createElement("span");
+    main.className = "cbo-task-main";
+    const prefixes = task.filenamePrefixes?.map((output) => output.prefix).join(" | ") || task.filenamePrefix;
+    main.textContent = prefixes || "未设置文件名";
+    main.title = main.textContent;
+    row.className = `cbo-task ${task.status}`;
+    row.append(status, main);
     list.append(row);
   }
   const submitted = state.tasks.filter((task) => task.status !== "failed").length;
@@ -442,7 +455,7 @@ function buildPanel() {
       <label>最大任务数<input id="cbo-max-jobs" type="number" min="1" value="100"></label>
       <pre id="cbo-preview" class="cbo-preview">填好参数后点击“生成预览”；只展示前 5 项，不会提交任务。</pre>
       <div class="cbo-actions"><button id="cbo-preview-button" type="button">生成预览</button><button id="cbo-submit" class="primary" type="button">提交任务</button></div>
-      <div id="cbo-task-summary" class="cbo-task-summary">尚未提交任务</div>
+      <div class="cbo-task-toolbar"><div id="cbo-task-summary" class="cbo-task-summary">尚未提交任务</div><button id="cbo-task-order" type="button" aria-label="当前最新任务在前，点击切换为最早任务在前">新→旧</button></div>
       <div id="cbo-tasks" class="cbo-tasks"></div>
     </div>`;
   document.body.append(element);
@@ -458,6 +471,10 @@ function buildPanel() {
   byId("cbo-refresh").addEventListener("click", refresh);
   byId("cbo-submit").addEventListener("click", submit);
   byId("cbo-preview-button").addEventListener("click", () => updatePreview(true));
+  byId("cbo-task-order").addEventListener("click", () => {
+    state.taskOrder = state.taskOrder === "desc" ? "asc" : "desc";
+    renderTasks();
+  });
   byId("cbo-insert-variable").addEventListener("click", () => {
     const variable = byId("cbo-variable").value.trim();
     const template = byId("cbo-template");
