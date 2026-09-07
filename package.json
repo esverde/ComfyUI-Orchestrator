@@ -1,0 +1,8 @@
+{
+  "name": "comfyui-batch-orchestrator",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/orchestrator-core.test.mjs"
+  }
+}
