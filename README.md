@@ -96,7 +96,7 @@ orchestrator/{{model}}/{{value}}_{{index}}
 
 确认数量和命名后，点击 `提交任务`。插件会按顺序为每个组合发送一个 `/prompt` 请求，并在面板中轮询任务历史，显示入队、执行、完成或失败状态。
 
-`最大任务数` 默认是 100，用于避免误操作产生过大的批次。需要更大的批次时，可以先确认模型数和文本值数，再调整这个上限。
+`最大任务数` 默认是 500，用于避免误操作产生过大的批次。需要更大的批次时，可以先确认模型数和文本值数，再调整这个上限。
 
 ## 一个虚构示例
 
@@ -288,7 +288,7 @@ Click `Generate preview` to show the total job count and the first five jobs, in
 
 After checking the count and names, click `Submit jobs`. The extension sends one `/prompt` request per combination in order, then polls task history and displays queued, running, completed, or failed states.
 
-`Maximum jobs` defaults to 100 to reduce accidental oversized batches. Check the model/value counts before raising the limit.
+`Maximum jobs` defaults to 500 to reduce accidental oversized batches. Check the model/value counts before raising the limit.
 
 ## Fictional example
 

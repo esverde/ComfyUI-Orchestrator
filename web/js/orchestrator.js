@@ -8,7 +8,7 @@ import {
 } from "./orchestrator-core.js";
 
 const EXTENSION_NAME = "comfyui-batch-orchestrator";
-const DEFAULT_MAX_JOBS = 100;
+const DEFAULT_MAX_JOBS = 500;
 const PREVIEW_LIMIT = 5;
 
 const state = {
@@ -452,7 +452,7 @@ function buildPanel() {
       <div class="cbo-variable-row"><label>变量名<input id="cbo-variable" value="subject" spellcheck="false"></label><button id="cbo-insert-variable" type="button">插入变量</button></div>
       <label>变量值（每行一个）<textarea id="cbo-values" rows="4" placeholder="cat&#10;dog"></textarea></label>
       <fieldset><legend>输出文件名（可逐个设置）</legend><div id="cbo-output-nodes" class="cbo-output-nodes"></div></fieldset>
-      <label>最大任务数<input id="cbo-max-jobs" type="number" min="1" value="100"></label>
+      <label>最大任务数<input id="cbo-max-jobs" type="number" min="1" value="500"></label>
       <pre id="cbo-preview" class="cbo-preview">填好参数后点击“生成预览”；只展示前 5 项，不会提交任务。</pre>
       <div class="cbo-actions"><button id="cbo-preview-button" type="button">生成预览</button><button id="cbo-submit" class="primary" type="button">提交任务</button></div>
       <div class="cbo-task-toolbar"><div id="cbo-task-summary" class="cbo-task-summary">尚未提交任务</div><button id="cbo-task-order" type="button" aria-label="当前最新任务在前，点击切换为最早任务在前">新→旧</button></div>
