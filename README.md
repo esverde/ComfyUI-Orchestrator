@@ -1,6 +1,6 @@
 # ComfyUI Batch Orchestrator
 
-ComfyUI 的本地批量任务编排侧边栏。它读取当前画布中的可执行工作流，让你选择多个 UNET 模型和 LoRA、批量替换正面文本变量，并按“模型 × LoRA × 文本值”的笛卡尔积逐个提交任务。
+ComfyUI 的本地批量任务编排侧边栏。它读取当前画布中的可执行工作流，让你选择多个 UNET 模型和 LoRA、批量替换一个或多个正面文本变量，并按“模型 × LoRA × 文本变量笛卡尔积”逐个提交任务。
 
 [中文](#chinese) · [English](#english)
 
@@ -19,12 +19,15 @@ ComfyUI 的本地批量任务编排侧边栏。它读取当前画布中的可执
 - 从 `LoraLoaderModelOnly` 的节点定义读取可用 LoRA，并支持按文件夹多选。
 - 使用 `{{变量名}}` 替换文本模板中的变量。
 - 对模型、LoRA 和文本值列表做笛卡尔积；没有 LoRA 节点时保持模型 × 文本值行为。
+- 通过“组合变量”管理多个变量槽位，例如 `top × bottom × shoes`，并为每个变量值保存短文件名 label、标签和备注。
+- 在当前浏览器的 IndexedDB 中持久化变量库、命名模板和最多 100 条模板历史。
+- 通过版本化 JSON 导入/导出变量库，支持在不同浏览器或不同 ComfyUI 安装之间迁移。
 - 为每个输出节点单独设置文件名前缀模板。
 - 在提交前生成前 5 个任务的本地预览。
 - 为 UNET、CLIP 和输出节点提供手动“定位”按钮。
 - 自动排除被识别为负面条件的 CLIP 文本节点。
 
-例如，选择 3 个模型、2 个 LoRA 和 4 个文本值，会生成 24 个独立任务。
+例如，选择 3 个模型、2 个 LoRA、2 个上装值和 3 个下装值，会生成 36 个独立任务。
 
 每个任务只会在浏览器内临时复制一份 API JSON；插件不会创建新的可视化工作流，也不会修改或保存当前画布。只有点击 `提交任务` 后，任务才会通过 ComfyUI 的 `/prompt` 接口入队。
 
@@ -76,6 +79,22 @@ red umbrella
 yellow raincoat
 blue scarf
 ```
+
+For multiple dimensions, click `组合变量` (`Variable combinations`). Each slot has an ASCII key and a set of checked library values. The prompt can reference several slots:
+
+```text
+studio portrait, {{top}}, {{bottom}}, {{shoes}}
+```
+
+The job count is the product of the model, LoRA, and every slot's selected values. Slot order controls expansion order. Library records keep the full prompt text, an optional short filename label, tags, and a note. The quick textarea remains the compatible single-variable path; the combination editor can save its lines into the library.
+
+需要多个维度时点击 `组合变量`。每个槽位有 ASCII key 和一组从变量库勾选的值；模板可以写成：
+
+```text
+studio portrait, {{top}}, {{bottom}}, {{shoes}}
+```
+
+任务数是模型 × LoRA × 每个变量槽位值数量的乘积，槽位顺序就是展开顺序。变量库记录包含完整文本、可选的文件名 label、tags 和备注。直接粘贴的快速输入仍然是单变量兼容路径；在组合编辑器中可以把当前输入保存到变量库。
 
 ### 4. 设置输出文件名
 
@@ -131,18 +150,28 @@ orchestrator/{{model}}/{{value}}_{{index}}
 | --- | --- |
 | `{{model}}` | 当前选中的模型名；会清理路径和文件名中的不安全字符 |
 | `{{lora}}` | 当前选中的 LoRA 名；会清理路径和文件名中的不安全字符 |
-| `{{value}}` | 当前文本变量值；会清理路径和文件名中的不安全字符 |
+| `{{value}}` | 兼容旧单变量路径的第一个文本值；会清理路径和文件名中的不安全字符 |
+| `{{<key>}}` | 多变量槽位对应的完整文本，例如 `{{top}}` |
+| `{{<key>_label}}` | 多变量槽位对应的短文件名 label，例如 `{{top_label}}` |
 | `{{index}}` | 当前任务序号，从 `001` 开始 |
 | `{{seed}}` | 基础工作流中找到的第一个 seed（如果存在） |
 
 规则：
 
 - 模板不能为空。
-- 只能使用上表中的变量。
+- 只能使用上表中的变量；多变量 key 必须匹配 `[A-Za-z][A-Za-z0-9_]*`。
 - 绝对路径、盘符路径和 `..` 路径段会被拒绝。
 - 静态 `/` 只用于创建输出目录下的相对路径。
 - 动态值中的 Windows 保留字符会被替换为下划线。
 - ComfyUI 仍会按照输出节点自身的行为补充文件扩展名。
+
+建议多变量输出使用 label，避免把完整提示词写进文件名，例如：
+
+```text
+orchestrator/{{top_label}}_{{bottom_label}}_{{index}}
+```
+
+tags 只用于变量库搜索和筛选，不会自动拼入文件名。
 
 ## 预览和提交的区别
 
@@ -151,6 +180,14 @@ orchestrator/{{model}}/{{value}}_{{index}}
 | `生成预览` | 是，临时 | 否 | 否 |
 | `提交任务` | 是，每个任务一份 | 是 | 否 |
 
+## 变量库、模板和迁移
+
+点击 `组合变量` 可以管理变量值和命名模板：支持按 key、文本、label、备注搜索，按 tag 精确筛选，编辑或删除记录，并从模板库或最近使用历史加载模板。模板历史最多保留 100 条，按模板正文去重。
+
+变量库和模板历史保存在当前浏览器的 IndexedDB 数据库 `comfyui-batch-orchestrator-library`；面板设置和输出节点模板仍保存在当前浏览器的 `localStorage`。IndexedDB 不可用时，快速输入仍可生成批次，但变量库 CRUD、历史和迁移不可用。
+
+`导出变量库 JSON` 会导出 schema `comfyui-batch-orchestrator-library`、版本 `1`、变量、模板和历史。导入默认合并，不清空当前库：相同 id 保留更新时间较新的记录，不同 id 但变量的 `key + text + label` 相同的记录会去重。导入 JSON 会先校验结构；失败时不会替换现有数据。
+
 ## 故障排查
 
 - **面板没有出现**：确认目录位于 `custom_nodes/comfyui-orchestrator`，重启 ComfyUI 并刷新浏览器。
@@ -158,6 +195,8 @@ orchestrator/{{model}}/{{value}}_{{index}}
 - **模型或 LoRA 列表为空**：确认当前选择的是启用的 `UNETLoader` 或 `LoraLoaderModelOnly`，并确认 ComfyUI 能返回对应的节点选项；刷新 ComfyUI 页面后再试。
 - **没有可选的 CLIP 节点**：确认存在启用的 `CLIPTextEncode`；负面条件会被自动排除。
 - **提示找不到占位符**：变量名为 `subject` 时，模板中必须出现精确的 `{{subject}}`，包括大括号和大小写。
+- **变量库无法打开**：检查浏览器是否允许当前 ComfyUI 来源使用 IndexedDB；暂时可以继续使用单变量快速输入。
+- **导入失败**：只能导入本扩展导出的 schema `comfyui-batch-orchestrator-library`、版本 `1` JSON；格式错误不会覆盖现有数据。
 - **预览报错**：先检查模型、文本值、输出节点和最大任务数，再重新点击 `生成预览`。
 - **定位没有效果**：先刷新当前画布；定位按钮只操作当前打开的画布，不会改变工作流内容。
 - **面板位置或设置没有保留**：设置保存在当前浏览器的 `localStorage`；如果浏览器禁用了站点存储，设置只能在当前页面暂时生效。
@@ -169,6 +208,7 @@ orchestrator/{{model}}/{{value}}_{{index}}
 - 输出节点必须拥有 `filename_prefix` 输入；不具备该输入的自定义节点不会被列为可命名输出。
 - 任务按顺序提交，当前没有并发提交、暂停、恢复或持久化批次功能。
 - 面板任务记录保存在当前页面内；刷新页面后不会恢复插件自己的任务列表。
+- 变量库、命名模板和最多 100 条模板历史保存在当前浏览器的 IndexedDB，不会自动同步到其他浏览器或 ComfyUI 安装；需要用 JSON 导入/导出迁移。
 - 面板默认固定在右上角；切换为浮动模式后可拖动标题栏，位置会保存在当前浏览器。
 - 负面 CLIP 的识别依赖连接输入名称或节点标题。使用完全自定义命名的复杂工作流时，建议检查自动发现结果。
 
@@ -180,8 +220,9 @@ orchestrator/{{model}}/{{value}}_{{index}}
 __init__.py                  ComfyUI 扩展入口
 web/js/orchestrator.js       面板、预览、提交和状态轮询
 web/js/orchestrator-core.js  纯批处理逻辑
+web/js/orchestrator-library.js IndexedDB、变量库 CRUD 和 JSON 迁移
 web/css/orchestrator.css     面板样式
-test/                        Node.js 原生测试
+test/                        Node.js 原生测试（核心和变量库纯逻辑）
 ```
 
 运行测试：
@@ -189,12 +230,13 @@ test/                        Node.js 原生测试
 ```bash
 npm test
 node --check web/js/orchestrator-core.js
+node --check web/js/orchestrator-library.js
 node --check web/js/orchestrator.js
 ```
 
 ## 数据边界
 
-插件不提供外部云服务，也不包含遥测逻辑。它只读取当前 ComfyUI 前端可访问的画布和节点定义；点击提交后，工作流副本和参数会发送回当前 ComfyUI 实例。
+插件不提供外部云服务，也不包含遥测逻辑。它只读取当前 ComfyUI 前端可访问的画布和节点定义；点击提交后，工作流副本和参数会发送回当前 ComfyUI 实例。变量库、模板和历史只写入当前浏览器 IndexedDB；JSON 导入/导出是用户主动进行的本地迁移，不是服务端同步。
 
 相关 ComfyUI 文档：
 
@@ -211,7 +253,7 @@ node --check web/js/orchestrator.js
 
 ## Overview
 
-ComfyUI Batch Orchestrator is a local batch-job sidebar extension for ComfyUI. It reads the executable workflow on the current canvas, lets you select multiple UNET models and LoRAs, replaces a text variable with multiple values, and expands the combinations as a model × LoRA × text Cartesian product.
+ComfyUI Batch Orchestrator is a local batch-job sidebar extension for ComfyUI. It reads the executable workflow on the current canvas, lets you select multiple UNET models and LoRAs, replaces one or more text variables with reusable values, and expands the combinations as a model × LoRA × text-slot Cartesian product.
 
 It runs inside ComfyUI as a frontend extension rather than as a separate web service. The panel can:
 
@@ -221,12 +263,15 @@ It runs inside ComfyUI as a frontend extension rather than as a separate web ser
 - Load LoRA choices from the `LoraLoaderModelOnly` node definition and allow folder-based multi-selection.
 - Replace a `{{variable}}` placeholder in a text template.
 - Generate one job for every model/LoRA/value combination; workflows without a LoRA node keep the model/value behavior.
+- Manage multiple text slots such as `top × bottom × shoes`, with short filename labels, tags, and notes for each value.
+- Persist variables, named templates, and up to 100 recent template uses in browser-local IndexedDB.
+- Export and import a versioned JSON library for migration between browsers or ComfyUI installations.
 - Configure a separate filename-prefix template for each output node.
 - Show a local preview of the first five jobs before submission.
 - Provide manual `Locate` buttons for UNET, CLIP, and output nodes.
 - Exclude CLIP text nodes identified as negative conditioning.
 
-For example, 3 selected models, 2 LoRAs, and 4 text values produce 24 independent jobs.
+For example, 3 selected models, 2 LoRAs, 2 top values, and 3 bottom values produce 36 independent jobs.
 
 Each job is a temporary in-memory copy of the API JSON. The extension does not create a new visual workflow and does not modify or save the current canvas. Jobs are sent to ComfyUI through `/prompt` only after `Submit jobs` is clicked.
 
@@ -333,18 +378,28 @@ Supported dynamic variables:
 | --- | --- |
 | `{{model}}` | Selected model name, sanitized for a safe filename |
 | `{{lora}}` | Selected LoRA name, sanitized for a safe filename |
-| `{{value}}` | Current text value, sanitized for a safe filename |
+| `{{value}}` | First text value for the compatible single-variable path, sanitized for a safe filename |
+| `{{<key>}}` | Full text for a multi-variable slot, such as `{{top}}` |
+| `{{<key>_label}}` | Short filename label for a multi-variable slot, such as `{{top_label}}` |
 | `{{index}}` | One-based job number, padded as `001`, `002`, and so on |
 | `{{seed}}` | The first seed found in the base workflow, when available |
 
 Rules:
 
 - The template cannot be empty.
-- Only the variables above are supported.
+- Only the variables above are supported; multi-variable keys must match `[A-Za-z][A-Za-z0-9_]*`.
 - Absolute paths, drive-letter paths, and `..` path segments are rejected.
 - Static `/` is for relative subdirectories below the output directory.
 - Windows-reserved characters in dynamic values are replaced with underscores.
 - ComfyUI still adds the file extension according to the output node.
+
+For multi-variable batches, prefer labels so full prompt text does not become a filename:
+
+```text
+orchestrator/{{top_label}}_{{bottom_label}}_{{index}}
+```
+
+Tags are used for library search and filtering; they are not automatically emitted into filenames.
 
 ## Preview versus submission
 
@@ -353,6 +408,14 @@ Rules:
 | `Generate preview` | Yes, temporarily | No | No |
 | `Submit jobs` | Yes, once per job | Yes | No |
 
+## Variable library, templates, and migration
+
+Open `组合变量` (`Variable combinations`) to manage values and named templates. The library supports search across keys, text, labels, notes, and tags; exact tag filtering; edit/delete; loading saved templates; and loading recent template history. History is capped at 100 entries and deduplicated by template body.
+
+Variables, templates, and history are stored in the current browser's IndexedDB database, `comfyui-batch-orchestrator-library`. Panel settings and output-template overrides remain in the current browser's `localStorage`. If IndexedDB is unavailable, quick single-variable input still works, but library CRUD, history, and migration are unavailable.
+
+`导出变量库 JSON` (`Export library JSON`) writes schema `comfyui-batch-orchestrator-library`, version `1`, variables, templates, and history. Imports merge by default rather than clearing the current library: equal ids keep the newer timestamp, and variable records with equal `key + text + label` are deduplicated. The JSON is validated before replacement; a failed import leaves existing data unchanged.
+
 ## Troubleshooting
 
 - **The panel is missing**: confirm the directory is `custom_nodes/comfyui-orchestrator`, restart ComfyUI, and refresh the browser.
@@ -360,6 +423,8 @@ Rules:
 - **The model list is empty**: make sure the selected node is an enabled `UNETLoader` and that ComfyUI returns model choices for it.
 - **No CLIP node is available**: make sure an enabled `CLIPTextEncode` exists; negative-conditioning nodes are filtered out.
 - **The placeholder is reported as missing**: if the variable name is `subject`, the template must contain the exact `{{subject}}`, including braces and case.
+- **The variable library cannot open**: check whether the current ComfyUI origin allows browser IndexedDB; the quick single-variable path remains available.
+- **Import fails**: only version-1 JSON with the `comfyui-batch-orchestrator-library` schema is accepted; malformed input does not overwrite existing data.
 - **Preview reports an error**: check the model selection, text values, output selection, and maximum-job limit, then generate the preview again.
 - **Locate does nothing**: refresh the current canvas first. Locate only acts on the currently open canvas and does not change workflow content.
 - **Panel settings or position are not retained**: settings are stored in the current browser's `localStorage`; if site storage is disabled, they only apply to the current page.
@@ -371,6 +436,7 @@ Rules:
 - An output node must expose a `filename_prefix` input to be listed as a nameable output.
 - Jobs are submitted sequentially. There is currently no concurrent submission, pause/resume, or persistent batch feature.
 - The panel's task list is kept in the current page and is not restored after a page refresh.
+- The variable library, named templates, and up to 100 history entries live in the current browser's IndexedDB; they are not synced across browsers or ComfyUI installations without JSON export/import.
 - The panel is fixed in the top-right by default; floating mode enables header dragging and remembers the position in the current browser.
 - Negative-CLIP detection uses connection input names or node titles. For complex custom workflows with fully custom naming, verify the discovered target list.
 
@@ -382,8 +448,9 @@ There is no frontend build artifact; ComfyUI loads the ES modules directly from 
 __init__.py                  ComfyUI extension entry point
 web/js/orchestrator.js       Panel, preview, submission, and polling
 web/js/orchestrator-core.js  Pure batch logic
+web/js/orchestrator-library.js IndexedDB CRUD and JSON migration helpers
 web/css/orchestrator.css     Panel styling
-test/                        Native Node.js tests
+test/                        Native Node.js tests for core and library logic
 ```
 
 Run the checks:
@@ -391,12 +458,13 @@ Run the checks:
 ```bash
 npm test
 node --check web/js/orchestrator-core.js
+node --check web/js/orchestrator-library.js
 node --check web/js/orchestrator.js
 ```
 
 ## Data boundary
 
-The extension does not provide a cloud service and contains no telemetry logic. It reads the canvas and node definitions exposed by the current ComfyUI frontend; after submission, the workflow copies and parameters are sent back to that ComfyUI instance.
+The extension does not provide a cloud service and contains no telemetry logic. It reads the canvas and node definitions exposed by the current ComfyUI frontend; after submission, the workflow copies and parameters are sent back to that ComfyUI instance. The variable library, templates, and history stay in browser-local IndexedDB; JSON migration is an explicit local export/import action, not server synchronization.
 
 Relevant ComfyUI documentation:
 
