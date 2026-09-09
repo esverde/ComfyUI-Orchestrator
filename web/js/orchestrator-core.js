@@ -110,6 +110,51 @@ export function buildModelTree(values) {
   return roots;
 }
 
+const VARIABLE_KEY = /^[A-Za-z][A-Za-z0-9_]*$/;
+
+function normalizeVariableValue(value) {
+  const record = typeof value === "object" && value !== null ? value : { text: value };
+  const text = String(record.text ?? "");
+  if (!text.trim()) throw new Error("文本变量值不能为空");
+  return {
+    ...(record.id ? { id: String(record.id) } : {}),
+    text,
+    label: String(record.label ?? ""),
+    tags: Array.isArray(record.tags) ? [...record.tags].map(String) : [],
+  };
+}
+
+export function normalizeVariableSlots(config) {
+  const isLegacy = !(Array.isArray(config.variables) && config.variables.length);
+  const source = isLegacy
+    ? [{
+        key: config.variable,
+        values: [...(config.values || [])].map((text) => ({ text, label: "", tags: [] })),
+      }]
+    : config.variables;
+  const keys = new Set();
+  return source.map((slot) => {
+    const key = String(slot?.key || "").trim();
+    if (!key || (!isLegacy && !VARIABLE_KEY.test(key))) {
+      throw new Error(`文本变量 key 无效：${key || "不能为空"}`);
+    }
+    if (keys.has(key)) throw new Error(`文本变量 key 重复：${key}`);
+    keys.add(key);
+    const values = Array.isArray(slot?.values) ? slot.values.map(normalizeVariableValue) : [];
+    if (!values.length) throw new Error(`文本变量 ${key} 至少需要一个值`);
+    return { key, values };
+  });
+}
+
+export function replacePlaceholders(template, replacements) {
+  const source = String(template);
+  const names = new Set(Object.keys(replacements || {}));
+  for (const match of source.matchAll(/\{\{([A-Za-z][A-Za-z0-9_]*)\}\}/g)) {
+    if (!names.has(match[1])) throw new Error(`文本模板中没有找到变量 ${match[1]}`);
+  }
+  return source.replace(/\{\{([A-Za-z][A-Za-z0-9_]*)\}\}/g, (_, key) => String(replacements[key]));
+}
+
 export function replacePlaceholder(template, variable, value) {
   const name = String(variable || "").trim();
   if (!name) throw new Error("文本变量名不能为空");
@@ -151,6 +196,19 @@ function firstSeed(prompt) {
   return "";
 }
 
+function* variableCombinations(slots, slotIndex = 0, selected = []) {
+  if (slotIndex === slots.length) {
+    yield selected;
+    return;
+  }
+  for (const value of slots[slotIndex].values) {
+    yield* variableCombinations(slots, slotIndex + 1, [
+      ...selected,
+      { ...value, key: slots[slotIndex].key },
+    ]);
+  }
+}
+
 export function sanitizeFilenamePrefix(prefix) {
   const original = String(prefix ?? "").trim();
   if (!original) throw new Error("输出文件名前缀不能为空");
@@ -184,10 +242,9 @@ export function renderFilename(template, fields) {
 export function* expandJobs(prompt, config) {
   const models = [...(config.models || [])];
   const loras = config.loras === undefined ? [""] : [...(config.loras || [])];
-  const values = [...(config.values || [])];
   if (!models.length) throw new Error("至少选择一个 UNET 模型");
   if (!loras.length) throw new Error("至少选择一个 LoRA");
-  if (!values.length) throw new Error("至少提供一个文本变量值");
+  const variables = normalizeVariableSlots(config);
 
   const unetId = String(config.unetId);
   const loraId = config.loraId ? String(config.loraId) : "";
@@ -203,20 +260,29 @@ export function* expandJobs(prompt, config) {
     throw new Error(`找不到 LoRA 节点 ${loraId}`);
   }
   if (loras.some(Boolean) && !loraId) throw new Error("缺少 LoRA 节点");
+  for (const { key } of variables) {
+    if (!baseText.includes(`{{${key}}}`)) {
+      throw new Error(`文本模板中没有找到变量 ${key}`);
+    }
+  }
 
   const outputs = config.outputs
     ? config.outputs.map((output) => ({ id: String(output.id), template: output.template }))
     : [...(config.outputIds || [])].map((id) => ({ id: String(id), template: config.filenameTemplate }));
-  const total = countJobs(models, loras, values);
+  const total = countJobs(models, loras, ...variables.map(({ values: slotValues }) => slotValues));
   let index = 1;
   for (const model of models) {
     for (const lora of loras) {
-      for (const value of values) {
+      for (const combination of variableCombinations(variables)) {
         const jobPrompt = cloneJson(prompt);
         jobPrompt[unetId].inputs.unet_name = model;
         if (loraId) jobPrompt[loraId].inputs.lora_name = lora;
-        jobPrompt[textId].inputs.text = replacePlaceholder(baseText, config.variable, value);
+        const replacements = Object.fromEntries(combination.map((item) => [item.key, item.text]));
+        jobPrompt[textId].inputs.text = variables.length === 1 && !VARIABLE_KEY.test(variables[0].key)
+          ? replacePlaceholder(baseText, variables[0].key, combination[0].text)
+          : replacePlaceholders(baseText, replacements);
 
+        const value = combination[0].text;
         const filenameFields = {
           model,
           lora,
@@ -224,6 +290,10 @@ export function* expandJobs(prompt, config) {
           index,
           seed: config.seed ?? firstSeed(prompt),
         };
+        for (const item of combination) {
+          filenameFields[item.key] = item.text;
+          filenameFields[`${item.key}_label`] = item.label || item.text;
+        }
         const filenamePrefixes = outputs.map((output) => ({
           id: output.id,
           prefix: renderFilename(output.template || DEFAULT_FILENAME_TEMPLATE, filenameFields),
@@ -241,6 +311,7 @@ export function* expandJobs(prompt, config) {
           model,
           lora,
           value,
+          variables: combination,
           filenamePrefix: filenamePrefixes[0]?.prefix || "",
           filenamePrefixes,
           prompt: jobPrompt,

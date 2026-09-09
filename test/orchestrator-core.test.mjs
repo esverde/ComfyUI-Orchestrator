@@ -167,6 +167,56 @@ test("adds LoRA choices to the Cartesian product and prompt clone", () => {
   assert.equal(jobs[0].prompt["272"].inputs.filename_prefix, "batch/one_safetensors/style_a_safetensors/cat/001");
 });
 
+test("expands multiple text variables and filename labels", () => {
+  const jobs = [...expandJobs(basePrompt, {
+    unetId: "262",
+    loraId: "273",
+    textId: "264",
+    template: "{{top}} with {{bottom}}",
+    models: ["one.safetensors"],
+    loras: ["style.safetensors"],
+    variables: [
+      { key: "top", values: [{ id: "t1", text: "white top", label: "white_top", tags: ["white"] }] },
+      {
+        key: "bottom",
+        values: [
+          { id: "b1", text: "black shorts", label: "black_shorts", tags: ["black"] },
+          { id: "b2", text: "black skirt", label: "black_skirt", tags: ["black"] },
+        ],
+      },
+    ],
+    outputs: [{ id: "272", template: "out/{{top_label}}_{{bottom_label}}_{{index}}" }],
+  })];
+
+  assert.equal(jobs.length, 2);
+  assert.equal(jobs[0].prompt["264"].inputs.text, "white top with black shorts");
+  assert.equal(jobs[0].prompt["272"].inputs.filename_prefix, "out/white_top_black_shorts_001");
+  assert.deepEqual(jobs.map((job) => job.variables.map(({ key, text }) => [key, text])), [
+    [["top", "white top"], ["bottom", "black shorts"]],
+    [["top", "white top"], ["bottom", "black skirt"]],
+  ]);
+});
+
+test("rejects an empty variable slot before yielding a job", () => {
+  assert.throws(() => [...expandJobs(basePrompt, {
+    unetId: "262",
+    textId: "264",
+    template: "{{top}}",
+    models: ["one.safetensors"],
+    variables: [{ key: "top", values: [] }],
+  })], /值|value/i);
+});
+
+test("rejects an undefined multi-variable placeholder before yielding a job", () => {
+  assert.throws(() => [...expandJobs(basePrompt, {
+    unetId: "262",
+    textId: "264",
+    template: "{{top}} {{missing}}",
+    models: ["one.safetensors"],
+    variables: [{ key: "top", values: [{ text: "white top" }] }],
+  })], /变量|placeholder/i);
+});
+
 test("replaces a named text placeholder and rejects a missing placeholder", () => {
   assert.equal(replacePlaceholder("portrait of {{subject}}", "subject", "a cat"), "portrait of a cat");
   assert.throws(() => replacePlaceholder("portrait", "subject", "a cat"), /placeholder/i);
@@ -227,4 +277,30 @@ test("renders and sanitizes output filename fields", () => {
   assert.throws(() => sanitizeFilenamePrefix("C:\\outside\\file"), /绝对路径|absolute|path/i);
   assert.throws(() => sanitizeFilenamePrefix("../outside"), /路径段|parent|path/i);
   assert.throws(() => sanitizeFilenamePrefix("/outside"), /绝对路径|absolute|path/i);
+});
+
+test("keeps the legacy single-variable shape", () => {
+  const [job] = expandJobs(basePrompt, {
+    unetId: "262",
+    textId: "264",
+    models: ["one.safetensors"],
+    variable: "subject",
+    values: ["cat"],
+  });
+
+  assert.equal(job.value, "cat");
+  assert.deepEqual(job.variables.map(({ key, text }) => [key, text]), [["subject", "cat"]]);
+});
+
+test("preserves legacy placeholder names outside the new key syntax", () => {
+  const [job] = expandJobs(basePrompt, {
+    unetId: "262",
+    textId: "264",
+    template: "edited {{上衣}}",
+    models: ["one.safetensors"],
+    variable: "上衣",
+    values: ["white top"],
+  });
+
+  assert.equal(job.prompt["264"].inputs.text, "edited white top");
 });
