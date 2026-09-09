@@ -618,7 +618,9 @@ function exportLibrary() {
   const link = document.createElement("a");
   link.href = url;
   link.download = "comfyui-batch-orchestrator-library.json";
+  document.body.append(link);
   link.click();
+  link.remove();
   URL.revokeObjectURL(url);
   setStatus("变量库已导出", "ok");
 }
@@ -1373,12 +1375,13 @@ async function submit() {
     const config = collectConfig();
     const total = countJobs(config.models, config.loras, ...variableDimensions(config));
     if (!total) throw new Error("请至少选择一个模型、LoRA（如有）并提供一个文本值");
-    await recordTemplateUse(config.template);
     const iterator = expandJobs(state.prompt, {
       ...config,
     });
+    const first = iterator.next();
+    await recordTemplateUse(config.template);
     let processed = 0;
-    for (let next = iterator.next(); !next.done; next = iterator.next()) {
+    for (let next = first; !next.done; next = iterator.next()) {
       const job = next.value;
       const task = {
         index: job.index,
