@@ -1,6 +1,7 @@
 import { app } from "../../../scripts/app.js";
 import { api } from "../../../scripts/api.js";
 import {
+  buildModelTree,
   countJobs,
   DEFAULT_FILENAME_TEMPLATE,
   discoverTargets,
@@ -182,14 +183,110 @@ function fillSelect(select, values, selected = []) {
 }
 
 function selectedValues(select) {
-  return [...select.selectedOptions].map((option) => option.value);
+  if (select?.selectedOptions) return [...select.selectedOptions].map((option) => option.value);
+  return [...(select?.querySelectorAll("input[data-model-value]:checked") || [])]
+    .map((input) => input.dataset.modelValue);
+}
+
+function modelLeavesIn(row) {
+  return [...(row?.nextElementSibling?.querySelectorAll("input[data-model-value]") || [])];
+}
+
+function updateModelTreeStates(container) {
+  [...container.querySelectorAll("input[data-model-folder]")].forEach((folder) => {
+    const leaves = modelLeavesIn(folder.closest(".cbo-model-tree-row"));
+    const selected = leaves.filter((leaf) => leaf.checked).length;
+    folder.checked = leaves.length > 0 && selected === leaves.length;
+    folder.indeterminate = selected > 0 && selected < leaves.length;
+    folder.closest(".cbo-model-tree-row")?.setAttribute(
+      "aria-checked",
+      folder.indeterminate ? "mixed" : String(folder.checked),
+    );
+  });
+}
+
+function appendModelTreeNode(container, node, selected, level) {
+  const row = document.createElement("div");
+  row.className = `cbo-model-tree-row cbo-model-tree-${node.type}`;
+  row.setAttribute("role", "treeitem");
+  row.setAttribute("aria-level", String(level));
+
+  if (node.type === "folder") {
+    row.setAttribute("aria-expanded", "true");
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "cbo-model-tree-toggle";
+    toggle.textContent = "⌄";
+    toggle.setAttribute("aria-label", `折叠${node.name}`);
+    const label = document.createElement("label");
+    label.className = "cbo-model-tree-label";
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.dataset.modelFolder = node.path;
+    const text = document.createElement("span");
+    text.textContent = node.name;
+    label.append(checkbox, text);
+    row.append(toggle, label);
+
+    const children = document.createElement("div");
+    children.className = "cbo-model-tree-children";
+    children.setAttribute("role", "group");
+    node.children.forEach((child) => appendModelTreeNode(children, child, selected, level + 1));
+    container.append(row, children);
+
+    toggle.addEventListener("click", () => {
+      const expanded = !children.hidden;
+      children.hidden = expanded;
+      row.setAttribute("aria-expanded", String(!expanded));
+      toggle.textContent = expanded ? "›" : "⌄";
+      toggle.setAttribute("aria-label", `${expanded ? "展开" : "折叠"}${node.name}`);
+    });
+    checkbox.addEventListener("change", () => {
+      modelLeavesIn(row).forEach((leaf) => { leaf.checked = checkbox.checked; });
+      updateModelTreeStates(container);
+    });
+    return;
+  }
+
+  const spacer = document.createElement("span");
+  spacer.className = "cbo-model-tree-spacer";
+  const label = document.createElement("label");
+  label.className = "cbo-model-tree-label";
+  const checkbox = document.createElement("input");
+  checkbox.type = "checkbox";
+  checkbox.dataset.modelValue = node.value;
+  checkbox.checked = selected.has(node.value);
+  const text = document.createElement("span");
+  text.textContent = node.name;
+  text.title = node.value;
+  label.append(checkbox, text);
+  row.append(spacer, label);
+  container.append(row);
+  checkbox.addEventListener("change", () => updateModelTreeStates(container));
+}
+
+function renderModelTree(container, values, selectedValuesList = []) {
+  container.replaceChildren();
+  container.setAttribute("role", "tree");
+  const tree = buildModelTree(values);
+  if (!tree.length) {
+    const empty = document.createElement("div");
+    empty.className = "cbo-model-tree-empty";
+    empty.textContent = "没有可用模型";
+    container.append(empty);
+    return;
+  }
+  const selected = new Set(selectedValuesList);
+  appendModelTreeNode(container, { type: "folder", name: "全部模型", path: "", children: tree }, selected, 1);
+  updateModelTreeStates(container);
 }
 
 async function refreshModelSelect() {
   const selectedUnet = state.targets.unet.find((target) => target.id === byId("cbo-unet-node").value);
   const currentModel = selectedUnet?.inputs?.unet_name || "";
   const values = await modelOptions(currentModel);
-  fillSelect(byId("cbo-models"), values, currentModel ? [currentModel] : []);
+  const selected = currentModel ? [currentModel] : selectedValues(byId("cbo-models"));
+  renderModelTree(byId("cbo-models"), values, selected);
 }
 
 function outputTemplateFor(id) {
@@ -708,7 +805,7 @@ function buildPanel() {
       </div>
       <div id="cbo-summary" class="cbo-summary">尚未读取画布</div>
       <label>UNET 加载器<div class="cbo-node-control"><select id="cbo-unet-node"></select><button id="cbo-unet-locate" class="cbo-locate" type="button" aria-label="定位 UNET 加载器">定位</button></div></label>
-      <label>模型（可多选）<select id="cbo-models" multiple size="6"></select></label>
+      <label>模型（可多选）<div id="cbo-models" class="cbo-model-tree" aria-label="模型列表"></div></label>
       <label>CLIP 文本节点<div class="cbo-node-control"><select id="cbo-text-node"></select><button id="cbo-text-locate" class="cbo-locate" type="button" aria-label="定位 CLIP 文本节点">定位</button></div></label>
       <label>文本模板<textarea id="cbo-template" rows="5" placeholder="使用 {{subject}} 作为变量"></textarea></label>
       <div class="cbo-variable-row"><label>变量名<input id="cbo-variable" value="subject" spellcheck="false"></label><button id="cbo-insert-variable" type="button">插入变量</button></div>

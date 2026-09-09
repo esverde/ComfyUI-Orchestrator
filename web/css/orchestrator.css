@@ -137,6 +137,47 @@
 
 .cbo-body select[multiple] { min-height: 112px; }
 .cbo-body textarea { resize: vertical; }
+.cbo-model-tree {
+  min-height: 112px;
+  max-height: 240px;
+  overflow: auto;
+  padding: 4px;
+  color: var(--cbo-input-fg);
+  background: var(--cbo-input-bg);
+  border: 1px solid var(--cbo-border);
+  border-radius: 4px;
+}
+.cbo-model-tree-row { display: flex; align-items: center; gap: 4px; min-height: 25px; }
+.cbo-model-tree-children { margin-left: 18px; }
+.cbo-model-tree-toggle {
+  flex: 0 0 18px;
+  width: 18px;
+  height: 20px;
+  padding: 0;
+  color: var(--cbo-muted);
+  background: transparent;
+  border: 0;
+  border-radius: 3px;
+  cursor: pointer;
+  line-height: 1;
+}
+.cbo-model-tree-toggle:hover,
+.cbo-model-tree-toggle:focus-visible { color: var(--cbo-fg); background: var(--cbo-hover); }
+.cbo-model-tree-spacer { flex: 0 0 18px; width: 18px; }
+.cbo-model-tree-label {
+  display: flex !important;
+  align-items: center;
+  min-width: 0;
+  flex: 1;
+  gap: 6px;
+  margin: 0 !important;
+  cursor: pointer;
+}
+.cbo-model-tree-label input { display: inline-block; flex: 0 0 auto; width: auto; margin: 0; padding: 0; }
+.cbo-model-tree-label span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cbo-model-tree-folder > .cbo-model-tree-label { font-weight: 600; }
+.cbo-model-tree-row:focus-within { outline: 1px solid var(--cbo-focus); outline-offset: -1px; border-radius: 3px; }
+.cbo-model-tree-empty { padding: 10px 6px; color: var(--cbo-muted); font-size: 11px; }
 .cbo-node-control { display: flex; align-items: center; gap: 6px; }
 .cbo-node-control select { flex: 1; min-width: 0; }
 .cbo-node-control .cbo-locate { margin-top: 3px; padding: 5px 7px; }

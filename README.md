@@ -52,7 +52,7 @@ ComfyUI 的本地批量任务编排侧边栏。它读取当前画布中的可执
 
 在 `UNET 加载器` 下拉框中选择目标节点，点击右侧 `定位` 可以把画布定位到该节点并高亮它。
 
-在 `模型（可多选）` 列表中按住 Ctrl（Windows/Linux）或 Command（macOS）选择多个模型。模型选项来自当前 ComfyUI 的 `UNETLoader` 节点定义。
+在 `模型（可多选）` 树中展开目录并勾选模型。勾选文件夹会递归选中其中的全部模型，部分选中时文件夹会显示半选状态。模型选项来自当前 ComfyUI 的 `UNETLoader` 节点定义。
 
 ### 3. 选择正面 CLIP 文本节点
 
@@ -248,7 +248,7 @@ Click `Refresh current canvas`. The panel only handles nodes that can be convert
 
 Choose the target node from `UNET Loader`. Click its `Locate` button to center and highlight the node on the canvas.
 
-Use Ctrl (Windows/Linux) or Command (macOS) to select multiple entries in `Models`. The entries come from ComfyUI's current `UNETLoader` node definition.
+Expand folders and check models in the `Models` tree. Checking a folder selects all models below it, and a partially selected folder shows an indeterminate checkbox. The entries come from ComfyUI's current `UNETLoader` node definition.
 
 ### 3. Select the positive CLIP text node
 

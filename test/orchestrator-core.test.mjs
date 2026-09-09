@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  buildModelTree,
   countJobs,
   discoverTargets,
   expandJobs,
@@ -35,6 +36,42 @@ test("discovers executable UNET, CLIP text, and output targets", () => {
   assert.deepEqual(targets.unet.map((target) => target.id), ["262"]);
   assert.equal(targets.text[0].title, "Positive prompt");
   assert.equal(targets.outputs[0].id, "272");
+});
+
+test("builds ordered nested folders from model paths", () => {
+  assert.deepEqual(buildModelTree([
+    "checkpoints/realvis/model_a.safetensors",
+    "checkpoints\\realvis\\model_b.safetensors",
+    "checkpoints/sdxl/model_c.safetensors",
+    "root.safetensors",
+    "root.safetensors",
+  ]), [
+    {
+      type: "folder",
+      name: "checkpoints",
+      path: "checkpoints",
+      children: [
+        {
+          type: "folder",
+          name: "realvis",
+          path: "checkpoints/realvis",
+          children: [
+            { type: "model", name: "model_a.safetensors", value: "checkpoints/realvis/model_a.safetensors" },
+            { type: "model", name: "model_b.safetensors", value: "checkpoints\\realvis\\model_b.safetensors" },
+          ],
+        },
+        {
+          type: "folder",
+          name: "sdxl",
+          path: "checkpoints/sdxl",
+          children: [
+            { type: "model", name: "model_c.safetensors", value: "checkpoints/sdxl/model_c.safetensors" },
+          ],
+        },
+      ],
+    },
+    { type: "model", name: "root.safetensors", value: "root.safetensors" },
+  ]);
 });
 
 test("excludes CLIP text nodes used as negative conditioning", () => {

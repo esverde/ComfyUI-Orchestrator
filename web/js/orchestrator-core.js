@@ -76,6 +76,34 @@ export function countJobs(models, values) {
   return models.length * values.length;
 }
 
+export function buildModelTree(values) {
+  const roots = [];
+  const folders = new Map();
+  const seen = new Set();
+
+  for (const value of values || []) {
+    if (typeof value !== "string" || !value.trim() || seen.has(value)) continue;
+    seen.add(value);
+    const segments = value.replaceAll("\\", "/").split("/").filter(Boolean);
+    if (!segments.length) continue;
+
+    let children = roots;
+    let path = "";
+    for (const segment of segments.slice(0, -1)) {
+      path = path ? `${path}/${segment}` : segment;
+      let folder = folders.get(path);
+      if (!folder) {
+        folder = { type: "folder", name: segment, path, children: [] };
+        folders.set(path, folder);
+        children.push(folder);
+      }
+      children = folder.children;
+    }
+    children.push({ type: "model", name: segments[segments.length - 1], value });
+  }
+  return roots;
+}
+
 export function replacePlaceholder(template, variable, value) {
   const name = String(variable || "").trim();
   if (!name) throw new Error("文本变量名不能为空");
