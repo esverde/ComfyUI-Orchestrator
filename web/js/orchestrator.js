@@ -63,7 +63,7 @@ function saveSettings() {
 
 const state = {
   prompt: null,
-  targets: { unet: [], text: [], outputs: [] },
+  targets: { unet: [], lora: [], text: [], outputs: [] },
   tasks: [],
   taskOrder: "desc",
   templateDirty: false,
@@ -133,10 +133,10 @@ async function getJson(path) {
   return response.json();
 }
 
-function optionValuesFromObjectInfo(data) {
-  const definitions = data?.UNETLoader ? [data.UNETLoader] : Object.values(data || {});
+function optionValuesFromObjectInfo(data, nodeType, inputName) {
+  const definitions = data?.[nodeType] ? [data[nodeType]] : Object.values(data || {});
   for (const definition of definitions) {
-    const raw = definition?.input?.required?.unet_name;
+    const raw = definition?.input?.required?.[inputName];
     const values = Array.isArray(raw) && Array.isArray(raw[0]) ? raw[0] : raw;
     if (Array.isArray(values)) {
       const strings = values.filter((value) => typeof value === "string");
@@ -155,13 +155,33 @@ function optionValuesFromModels(data) {
 
 async function modelOptions(currentValue) {
   try {
-    const values = optionValuesFromObjectInfo(await getJson("/object_info/UNETLoader"));
+    const values = optionValuesFromObjectInfo(await getJson("/object_info/UNETLoader"), "UNETLoader", "unet_name");
     if (values.length) return values;
   } catch {
     // The models route below handles older or restricted ComfyUI builds.
   }
   try {
     const values = optionValuesFromModels(await getJson("/models/diffusion_models"));
+    if (values.length) return values;
+  } catch {
+    // A current workflow value is still useful for a one-combination smoke test.
+  }
+  return currentValue ? [currentValue] : [];
+}
+
+async function loraOptions(currentValue) {
+  try {
+    const values = optionValuesFromObjectInfo(
+      await getJson("/object_info/LoraLoaderModelOnly"),
+      "LoraLoaderModelOnly",
+      "lora_name",
+    );
+    if (values.length) return values;
+  } catch {
+    // The models route below handles older or restricted ComfyUI builds.
+  }
+  try {
+    const values = optionValuesFromModels(await getJson("/models/loras"));
     if (values.length) return values;
   } catch {
     // A current workflow value is still useful for a one-combination smoke test.
@@ -182,32 +202,32 @@ function fillSelect(select, values, selected = []) {
   }
 }
 
-function selectedValues(select) {
+function selectedValues(select, kind = "model") {
   if (select?.selectedOptions) return [...select.selectedOptions].map((option) => option.value);
-  return [...(select?.querySelectorAll("input[data-model-value]:checked") || [])]
-    .map((input) => input.dataset.modelValue);
+  return [...(select?.querySelectorAll(`input[data-${kind}-value]:checked`) || [])]
+    .map((input) => input.dataset[`${kind}Value`]);
 }
 
-function modelLeavesIn(row) {
-  return [...(row?.nextElementSibling?.querySelectorAll("input[data-model-value]") || [])];
+function treeLeavesIn(row, kind) {
+  return [...(row?.nextElementSibling?.querySelectorAll(`input[data-${kind}-value]`) || [])];
 }
 
-function updateModelTreeStates(container) {
-  [...container.querySelectorAll("input[data-model-folder]")].forEach((folder) => {
-    const leaves = modelLeavesIn(folder.closest(".cbo-model-tree-row"));
+function updateTreeStates(container, kind) {
+  [...container.querySelectorAll(`input[data-${kind}-folder]`)].forEach((folder) => {
+    const leaves = treeLeavesIn(folder.closest(`.cbo-${kind}-tree-row`), kind);
     const selected = leaves.filter((leaf) => leaf.checked).length;
     folder.checked = leaves.length > 0 && selected === leaves.length;
     folder.indeterminate = selected > 0 && selected < leaves.length;
-    folder.closest(".cbo-model-tree-row")?.setAttribute(
+    folder.closest(`.cbo-${kind}-tree-row`)?.setAttribute(
       "aria-checked",
       folder.indeterminate ? "mixed" : String(folder.checked),
     );
   });
 }
 
-function appendModelTreeNode(container, node, selected, level) {
+function appendTreeNode(container, node, selected, level, kind) {
   const row = document.createElement("div");
-  row.className = `cbo-model-tree-row cbo-model-tree-${node.type}`;
+  row.className = `cbo-${kind}-tree-row cbo-${kind}-tree-${node.type}`;
   row.setAttribute("role", "treeitem");
   row.setAttribute("aria-level", String(level));
 
@@ -215,23 +235,23 @@ function appendModelTreeNode(container, node, selected, level) {
     row.setAttribute("aria-expanded", "true");
     const toggle = document.createElement("button");
     toggle.type = "button";
-    toggle.className = "cbo-model-tree-toggle";
+    toggle.className = `cbo-${kind}-tree-toggle`;
     toggle.textContent = "⌄";
     toggle.setAttribute("aria-label", `折叠${node.name}`);
     const label = document.createElement("label");
-    label.className = "cbo-model-tree-label";
+    label.className = `cbo-${kind}-tree-label`;
     const checkbox = document.createElement("input");
     checkbox.type = "checkbox";
-    checkbox.dataset.modelFolder = node.path;
+    checkbox.dataset[`${kind}Folder`] = node.path;
     const text = document.createElement("span");
     text.textContent = node.name;
     label.append(checkbox, text);
     row.append(toggle, label);
 
     const children = document.createElement("div");
-    children.className = "cbo-model-tree-children";
+    children.className = `cbo-${kind}-tree-children`;
     children.setAttribute("role", "group");
-    node.children.forEach((child) => appendModelTreeNode(children, child, selected, level + 1));
+    node.children.forEach((child) => appendTreeNode(children, child, selected, level + 1, kind));
     container.append(row, children);
 
     toggle.addEventListener("click", () => {
@@ -242,19 +262,19 @@ function appendModelTreeNode(container, node, selected, level) {
       toggle.setAttribute("aria-label", `${expanded ? "展开" : "折叠"}${node.name}`);
     });
     checkbox.addEventListener("change", () => {
-      modelLeavesIn(row).forEach((leaf) => { leaf.checked = checkbox.checked; });
-      updateModelTreeStates(container);
+      treeLeavesIn(row, kind).forEach((leaf) => { leaf.checked = checkbox.checked; });
+      updateTreeStates(container, kind);
     });
     return;
   }
 
   const spacer = document.createElement("span");
-  spacer.className = "cbo-model-tree-spacer";
+  spacer.className = `cbo-${kind}-tree-spacer`;
   const label = document.createElement("label");
-  label.className = "cbo-model-tree-label";
+  label.className = `cbo-${kind}-tree-label`;
   const checkbox = document.createElement("input");
   checkbox.type = "checkbox";
-  checkbox.dataset.modelValue = node.value;
+  checkbox.dataset[`${kind}Value`] = node.value;
   checkbox.checked = selected.has(node.value);
   const text = document.createElement("span");
   text.textContent = node.name;
@@ -262,31 +282,47 @@ function appendModelTreeNode(container, node, selected, level) {
   label.append(checkbox, text);
   row.append(spacer, label);
   container.append(row);
-  checkbox.addEventListener("change", () => updateModelTreeStates(container));
+  checkbox.addEventListener("change", () => updateTreeStates(container, kind));
 }
 
-function renderModelTree(container, values, selectedValuesList = []) {
+function renderValueTree(container, values, selectedValuesList, kind, emptyLabel, rootName) {
   container.replaceChildren();
   container.setAttribute("role", "tree");
   const tree = buildModelTree(values);
   if (!tree.length) {
     const empty = document.createElement("div");
-    empty.className = "cbo-model-tree-empty";
-    empty.textContent = "没有可用模型";
+    empty.className = `cbo-${kind}-tree-empty`;
+    empty.textContent = emptyLabel;
     container.append(empty);
     return;
   }
   const selected = new Set(selectedValuesList);
-  appendModelTreeNode(container, { type: "folder", name: "全部模型", path: "", children: tree }, selected, 1);
-  updateModelTreeStates(container);
+  appendTreeNode(container, { type: "folder", name: rootName, path: "", children: tree }, selected, 1, kind);
+  updateTreeStates(container, kind);
+}
+
+function renderModelTree(container, values, selectedValuesList = []) {
+  renderValueTree(container, values, selectedValuesList, "model", "没有可用模型", "全部模型");
+}
+
+function renderLoraTree(container, values, selectedValuesList = []) {
+  renderValueTree(container, values, selectedValuesList, "lora", "没有可用 LoRA", "全部 LoRA");
 }
 
 async function refreshModelSelect() {
   const selectedUnet = state.targets.unet.find((target) => target.id === byId("cbo-unet-node").value);
   const currentModel = selectedUnet?.inputs?.unet_name || "";
   const values = await modelOptions(currentModel);
-  const selected = currentModel ? [currentModel] : selectedValues(byId("cbo-models"));
+  const selected = currentModel ? [currentModel] : selectedValues(byId("cbo-models"), "model");
   renderModelTree(byId("cbo-models"), values, selected);
+}
+
+async function refreshLoraSelect() {
+  const selectedLora = state.targets.lora.find((target) => target.id === byId("cbo-lora-node").value);
+  const currentLora = selectedLora?.inputs?.lora_name || "";
+  const values = selectedLora ? await loraOptions(currentLora) : [];
+  const selected = currentLora ? [currentLora] : selectedValues(byId("cbo-loras"), "lora");
+  renderLoraTree(byId("cbo-loras"), values, selected);
 }
 
 function outputTemplateFor(id) {
@@ -483,11 +519,12 @@ function installPanelDrag(element) {
 function updateSummary() {
   const summary = byId("cbo-summary");
   if (!summary) return;
-  summary.textContent = `可执行节点：${Object.keys(state.prompt || {}).length}；UNET ${state.targets.unet.length}；文本 ${state.targets.text.length}；输出 ${state.targets.outputs.length}；上限 ${state.settings.maxJobs}；预览 ${state.settings.previewLimit} 项`;
+  summary.textContent = `可执行节点：${Object.keys(state.prompt || {}).length}；UNET ${state.targets.unet.length}；LoRA ${state.targets.lora.length}；文本 ${state.targets.text.length}；输出 ${state.targets.outputs.length}；上限 ${state.settings.maxJobs}；预览 ${state.settings.previewLimit} 项`;
 }
 
 function setTargetControls() {
   const unetSelect = byId("cbo-unet-node");
+  const loraSelect = byId("cbo-lora-node");
   const textSelect = byId("cbo-text-node");
   const outputContainer = byId("cbo-output-nodes");
 
@@ -497,12 +534,19 @@ function setTargetControls() {
     state.targets.unet[0] ? [state.targets.unet[0].id] : [],
   );
   fillSelect(
+    loraSelect,
+    state.targets.lora.map((target) => ({ id: target.id, label: `${target.title} (#${target.id})` })),
+    state.targets.lora[0] ? [state.targets.lora[0].id] : [],
+  );
+  fillSelect(
     textSelect,
     state.targets.text.map((target) => ({ id: target.id, label: `${target.title} (#${target.id})` })),
     state.targets.text[0] ? [state.targets.text[0].id] : [],
   );
 
-  refreshModelSelect().then(updatePreview).catch((error) => setStatus(`读取模型列表失败：${error.message}`, "error"));
+  Promise.all([refreshModelSelect(), refreshLoraSelect()])
+    .then(updatePreview)
+    .catch((error) => setStatus(`读取模型或 LoRA 列表失败：${error.message}`, "error"));
 
   outputContainer.replaceChildren();
   state.targets.outputs.forEach((target, index) => {
@@ -561,6 +605,7 @@ function outputConfigs() {
 
 function collectConfig() {
   const unetId = byId("cbo-unet-node").value;
+  const loraId = byId("cbo-lora-node").value;
   const textId = byId("cbo-text-node").value;
   const values = byId("cbo-values").value
     .split(/\r?\n/)
@@ -568,19 +613,22 @@ function collectConfig() {
     .filter(Boolean);
   const maxJobs = state.settings.maxJobs;
   const models = selectedValues(byId("cbo-models"));
+  const loras = state.targets.lora.length ? selectedValues(byId("cbo-loras"), "lora") : [""];
   const config = {
     unetId,
+    loraId,
     textId,
     template: byId("cbo-template").value,
     outputs: outputConfigs(),
     models,
+    loras,
     values,
     variable: byId("cbo-variable").value.trim(),
     maxJobs,
   };
   if (!config.unetId || !config.textId) throw new Error("请先刷新并选择目标节点");
-  if (countJobs(models, values) > maxJobs) {
-    throw new Error(`任务数 ${countJobs(models, values)} 超过上限 ${maxJobs}`);
+  if (countJobs(models, loras, values) > maxJobs) {
+    throw new Error(`任务数 ${countJobs(models, loras, values)} 超过上限 ${maxJobs}`);
   }
   return config;
 }
@@ -602,12 +650,14 @@ function updatePreview(announce = false) {
   if (!state.prompt) return;
   try {
     const config = collectConfig();
-    const total = countJobs(config.models, config.values);
+    const total = countJobs(config.models, config.loras, config.values);
     const samples = sampleJobs(config);
+    const hasLora = Boolean(config.loraId);
     const lines = [
-      `将提交 ${total} 个任务（模型 × 文本值）`,
+      `将提交 ${total} 个任务（${hasLora ? "模型 × LoRA × 文本值" : "模型 × 文本值"}）`,
       ...samples.map((job) => [
         `${String(job.index).padStart(3, "0")}  模型：${job.model}`,
+        ...(hasLora ? [`    LoRA：${job.lora}`] : []),
         `    文本值：${job.value}`,
         `    文件名：${job.filenamePrefixes.map((output) => `#${output.id}: ${output.prefix}`).join(" | ")}`,
       ].join("\n")),
@@ -636,7 +686,7 @@ async function refresh() {
     updatePreview();
   } catch (error) {
     state.prompt = null;
-    state.targets = { unet: [], text: [], outputs: [] };
+    state.targets = { unet: [], lora: [], text: [], outputs: [] };
     byId("cbo-summary").textContent = "读取失败";
     setStatus(error.message, "error");
     setFieldMessage("请修正工作流后重新刷新。", "error");
@@ -737,8 +787,8 @@ async function submit() {
   button.disabled = true;
   try {
     const config = collectConfig();
-    const total = countJobs(config.models, config.values);
-    if (!total) throw new Error("请至少选择一个模型并提供一个文本值");
+    const total = countJobs(config.models, config.loras, config.values);
+    if (!total) throw new Error("请至少选择一个模型、LoRA（如有）并提供一个文本值");
     const iterator = expandJobs(state.prompt, {
       ...config,
     });
@@ -748,6 +798,7 @@ async function submit() {
       const task = {
         index: job.index,
         model: job.model,
+        lora: job.lora,
         value: job.value,
         filenamePrefix: job.filenamePrefix,
         filenamePrefixes: job.filenamePrefixes,
@@ -806,11 +857,13 @@ function buildPanel() {
       <div id="cbo-summary" class="cbo-summary">尚未读取画布</div>
       <label>UNET 加载器<div class="cbo-node-control"><select id="cbo-unet-node"></select><button id="cbo-unet-locate" class="cbo-locate" type="button" aria-label="定位 UNET 加载器">定位</button></div></label>
       <label>模型（可多选）<div id="cbo-models" class="cbo-model-tree" aria-label="模型列表"></div></label>
+      <label>LoRA 加载器<div class="cbo-node-control"><select id="cbo-lora-node"></select><button id="cbo-lora-locate" class="cbo-locate" type="button" aria-label="定位 LoRA 加载器">定位</button></div></label>
+      <label>LoRA（可多选）<div id="cbo-loras" class="cbo-lora-tree" aria-label="LoRA 列表"></div></label>
       <label>CLIP 文本节点<div class="cbo-node-control"><select id="cbo-text-node"></select><button id="cbo-text-locate" class="cbo-locate" type="button" aria-label="定位 CLIP 文本节点">定位</button></div></label>
       <label>文本模板<textarea id="cbo-template" rows="5" placeholder="使用 {{subject}} 作为变量"></textarea></label>
       <div class="cbo-variable-row"><label>变量名<input id="cbo-variable" value="subject" spellcheck="false"></label><button id="cbo-insert-variable" type="button">插入变量</button></div>
       <label>变量值（每行一个）<textarea id="cbo-values" rows="4" placeholder="cat&#10;dog"></textarea></label>
-      <fieldset><legend>输出文件名（可逐个设置）</legend><div id="cbo-output-nodes" class="cbo-output-nodes"></div></fieldset>
+      <fieldset><legend>输出文件名（可逐个设置，支持 {{model}}、{{lora}}、{{value}}、{{index}}、{{seed}}）</legend><div id="cbo-output-nodes" class="cbo-output-nodes"></div></fieldset>
       <pre id="cbo-preview" class="cbo-preview">填好参数后点击“生成预览”；预览数量可在设置中调整，不会提交任务。</pre>
       <div class="cbo-actions"><button id="cbo-preview-button" type="button">生成预览</button><button id="cbo-submit" class="primary" type="button">提交任务</button></div>
       <div class="cbo-task-toolbar"><div id="cbo-task-summary" class="cbo-task-summary">尚未提交任务</div><button id="cbo-task-order" type="button" aria-label="当前最新任务在前，点击切换为最早任务在前">新→旧</button></div>
@@ -878,13 +931,17 @@ function buildPanel() {
   byId("cbo-unet-node").addEventListener("change", () => {
     refreshModelSelect().then(updatePreview).catch((error) => setStatus(`读取模型列表失败：${error.message}`, "error"));
   });
+  byId("cbo-lora-node").addEventListener("change", () => {
+    refreshLoraSelect().then(updatePreview).catch((error) => setStatus(`读取 LoRA 列表失败：${error.message}`, "error"));
+  });
   byId("cbo-unet-locate").addEventListener("click", () => locateNode(byId("cbo-unet-node").value));
+  byId("cbo-lora-locate").addEventListener("click", () => locateNode(byId("cbo-lora-node").value));
   byId("cbo-text-locate").addEventListener("click", () => locateNode(byId("cbo-text-node").value));
   byId("cbo-template").addEventListener("input", () => {
     state.templateDirty = true;
     updatePreview();
   });
-  ["cbo-models", "cbo-variable", "cbo-values"].forEach((id) => {
+  ["cbo-models", "cbo-loras", "cbo-variable", "cbo-values"].forEach((id) => {
     byId(id).addEventListener("input", updatePreview);
     byId(id).addEventListener("change", updatePreview);
   });

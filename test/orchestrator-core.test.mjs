@@ -16,6 +16,10 @@ const basePrompt = {
     class_type: "UNETLoader",
     inputs: { unet_name: "models/one.safetensors", weight_dtype: "default" },
   },
+  "273": {
+    class_type: "LoraLoaderModelOnly",
+    inputs: { model: ["262", 0], lora_name: "styles/one.safetensors", strength_model: 0.8 },
+  },
   "264": {
     class_type: "CLIPTextEncode",
     inputs: { text: "a {{subject}}", clip: ["258", 0] },
@@ -34,6 +38,7 @@ test("discovers executable UNET, CLIP text, and output targets", () => {
   ]);
 
   assert.deepEqual(targets.unet.map((target) => target.id), ["262"]);
+  assert.deepEqual(targets.lora.map((target) => target.id), ["273"]);
   assert.equal(targets.text[0].title, "Positive prompt");
   assert.equal(targets.outputs[0].id, "272");
 });
@@ -129,6 +134,37 @@ test("expands a Cartesian product into independent prompt clones", () => {
   assert.deepEqual(jobs[0].filenamePrefixes, [{ id: "272", prefix: "batch/one_safetensors/cat/001" }]);
   assert.notStrictEqual(jobs[0].prompt, jobs[1].prompt);
   assert.equal(basePrompt["264"].inputs.text, "a {{subject}}");
+});
+
+test("adds LoRA choices to the Cartesian product and prompt clone", () => {
+  assert.equal(countJobs(["one", "two"], ["style_a", "style_b"], ["cat", "dog"]), 8);
+
+  const jobs = [...expandJobs(basePrompt, {
+    unetId: "262",
+    loraId: "273",
+    textId: "264",
+    outputs: [
+      { id: "272", template: "batch/{{model}}/{{lora}}/{{value}}/{{index}}" },
+    ],
+    models: ["one.safetensors"],
+    loras: ["styles/style_a.safetensors", "styles/style_b.safetensors"],
+    values: ["cat", "dog"],
+    variable: "subject",
+  })];
+
+  assert.equal(jobs.length, 4);
+  assert.deepEqual(
+    jobs.map(({ model, lora, value }) => [model, lora, value]),
+    [
+      ["one.safetensors", "styles/style_a.safetensors", "cat"],
+      ["one.safetensors", "styles/style_a.safetensors", "dog"],
+      ["one.safetensors", "styles/style_b.safetensors", "cat"],
+      ["one.safetensors", "styles/style_b.safetensors", "dog"],
+    ],
+  );
+  assert.equal(jobs[0].prompt["273"].inputs.lora_name, "styles/style_a.safetensors");
+  assert.equal(jobs[0].prompt["273"].inputs.strength_model, 0.8);
+  assert.equal(jobs[0].prompt["272"].inputs.filename_prefix, "batch/one_safetensors/style_a_safetensors/cat/001");
 });
 
 test("replaces a named text placeholder and rejects a missing placeholder", () => {

@@ -26,6 +26,11 @@ function isUnetTarget(node) {
   return /unet/i.test(type) && Object.hasOwn(asInputs(node), "unet_name");
 }
 
+function isLoraTarget(node) {
+  const type = String(node?.class_type || "");
+  return /loraloadermodelonly/i.test(type) && Object.hasOwn(asInputs(node), "lora_name");
+}
+
 function isTextTarget(node) {
   const type = String(node?.class_type || "");
   return /cliptextencode/i.test(type) && typeof asInputs(node).text === "string";
@@ -65,6 +70,7 @@ export function discoverTargets(prompt, graphNodes = []) {
   const entries = Object.entries(prompt || {});
   return {
     unet: entries.filter(([, node]) => isUnetTarget(node)).map(([id, node]) => target(id, node, graphById.get(id))),
+    lora: entries.filter(([, node]) => isLoraTarget(node)).map(([id, node]) => target(id, node, graphById.get(id))),
     text: entries
       .filter(([id, node]) => isTextTarget(node) && !isNegativeTextTarget(id, graphById.get(id), negativeIds))
       .map(([id, node]) => target(id, node, graphById.get(id))),
@@ -72,8 +78,8 @@ export function discoverTargets(prompt, graphNodes = []) {
   };
 }
 
-export function countJobs(models, values) {
-  return models.length * values.length;
+export function countJobs(...dimensions) {
+  return dimensions.reduce((total, values) => total * values.length, 1);
 }
 
 export function buildModelTree(values) {
@@ -177,11 +183,14 @@ export function renderFilename(template, fields) {
 
 export function* expandJobs(prompt, config) {
   const models = [...(config.models || [])];
+  const loras = config.loras === undefined ? [""] : [...(config.loras || [])];
   const values = [...(config.values || [])];
   if (!models.length) throw new Error("至少选择一个 UNET 模型");
+  if (!loras.length) throw new Error("至少选择一个 LoRA");
   if (!values.length) throw new Error("至少提供一个文本变量值");
 
   const unetId = String(config.unetId);
+  const loraId = config.loraId ? String(config.loraId) : "";
   const textId = String(config.textId);
   const baseText = typeof config.template === "string"
     ? config.template
@@ -190,45 +199,54 @@ export function* expandJobs(prompt, config) {
   if (!prompt?.[unetId]?.inputs || !Object.hasOwn(prompt[unetId].inputs, "unet_name")) {
     throw new Error(`找不到 UNET 节点 ${unetId}`);
   }
+  if (loraId && (!prompt?.[loraId]?.inputs || !Object.hasOwn(prompt[loraId].inputs, "lora_name"))) {
+    throw new Error(`找不到 LoRA 节点 ${loraId}`);
+  }
+  if (loras.some(Boolean) && !loraId) throw new Error("缺少 LoRA 节点");
 
   const outputs = config.outputs
     ? config.outputs.map((output) => ({ id: String(output.id), template: output.template }))
     : [...(config.outputIds || [])].map((id) => ({ id: String(id), template: config.filenameTemplate }));
-  const total = countJobs(models, values);
+  const total = countJobs(models, loras, values);
   let index = 1;
   for (const model of models) {
-    for (const value of values) {
-      const jobPrompt = cloneJson(prompt);
-      jobPrompt[unetId].inputs.unet_name = model;
-      jobPrompt[textId].inputs.text = replacePlaceholder(baseText, config.variable, value);
+    for (const lora of loras) {
+      for (const value of values) {
+        const jobPrompt = cloneJson(prompt);
+        jobPrompt[unetId].inputs.unet_name = model;
+        if (loraId) jobPrompt[loraId].inputs.lora_name = lora;
+        jobPrompt[textId].inputs.text = replacePlaceholder(baseText, config.variable, value);
 
-      const filenameFields = {
-        model,
-        value,
-        index,
-        seed: config.seed ?? firstSeed(prompt),
-      };
-      const filenamePrefixes = outputs.map((output) => ({
-        id: output.id,
-        prefix: renderFilename(output.template || DEFAULT_FILENAME_TEMPLATE, filenameFields),
-      }));
-      for (const { id, prefix } of filenamePrefixes) {
-        const outputInputs = jobPrompt[id]?.inputs;
-        if (outputInputs && Object.hasOwn(outputInputs, "filename_prefix")) {
-          outputInputs.filename_prefix = prefix;
+        const filenameFields = {
+          model,
+          lora,
+          value,
+          index,
+          seed: config.seed ?? firstSeed(prompt),
+        };
+        const filenamePrefixes = outputs.map((output) => ({
+          id: output.id,
+          prefix: renderFilename(output.template || DEFAULT_FILENAME_TEMPLATE, filenameFields),
+        }));
+        for (const { id, prefix } of filenamePrefixes) {
+          const outputInputs = jobPrompt[id]?.inputs;
+          if (outputInputs && Object.hasOwn(outputInputs, "filename_prefix")) {
+            outputInputs.filename_prefix = prefix;
+          }
         }
-      }
 
-      yield {
-        index,
-        total,
-        model,
-        value,
-        filenamePrefix: filenamePrefixes[0]?.prefix || "",
-        filenamePrefixes,
-        prompt: jobPrompt,
-      };
-      index += 1;
+        yield {
+          index,
+          total,
+          model,
+          lora,
+          value,
+          filenamePrefix: filenamePrefixes[0]?.prefix || "",
+          filenamePrefixes,
+          prompt: jobPrompt,
+        };
+        index += 1;
+      }
     }
   }
 }

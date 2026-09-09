@@ -1,6 +1,6 @@
 # ComfyUI Batch Orchestrator
 
-ComfyUI 的本地批量任务编排侧边栏。它读取当前画布中的可执行工作流，让你选择多个 UNET 模型、批量替换正面文本变量，并按“模型 × 文本值”的笛卡尔积逐个提交任务。
+ComfyUI 的本地批量任务编排侧边栏。它读取当前画布中的可执行工作流，让你选择多个 UNET 模型和 LoRA、批量替换正面文本变量，并按“模型 × LoRA × 文本值”的笛卡尔积逐个提交任务。
 
 [中文](#chinese) · [English](#english)
 
@@ -14,16 +14,17 @@ ComfyUI 的本地批量任务编排侧边栏。它读取当前画布中的可执
 这是一个运行在 ComfyUI 内部的前端扩展，不是独立的 Web 服务。插件会在画布右侧添加 `Batch Orchestrator` 面板，提供：
 
 - 从当前画布读取可执行的 API 工作流。
-- 自动发现启用的 `UNETLoader`、正面 `CLIPTextEncode` 和可命名的输出节点。
+- 自动发现启用的 `UNETLoader`、`LoraLoaderModelOnly`、正面 `CLIPTextEncode` 和可命名的输出节点。
 - 从 `UNETLoader` 的节点定义读取可用模型，并支持多选。
+- 从 `LoraLoaderModelOnly` 的节点定义读取可用 LoRA，并支持按文件夹多选。
 - 使用 `{{变量名}}` 替换文本模板中的变量。
-- 对模型列表和文本值列表做笛卡尔积。
+- 对模型、LoRA 和文本值列表做笛卡尔积；没有 LoRA 节点时保持模型 × 文本值行为。
 - 为每个输出节点单独设置文件名前缀模板。
 - 在提交前生成前 5 个任务的本地预览。
 - 为 UNET、CLIP 和输出节点提供手动“定位”按钮。
 - 自动排除被识别为负面条件的 CLIP 文本节点。
 
-例如，选择 3 个模型和 4 个文本值，会生成 12 个独立任务。
+例如，选择 3 个模型、2 个 LoRA 和 4 个文本值，会生成 24 个独立任务。
 
 每个任务只会在浏览器内临时复制一份 API JSON；插件不会创建新的可视化工作流，也不会修改或保存当前画布。只有点击 `提交任务` 后，任务才会通过 ComfyUI 的 `/prompt` 接口入队。
 
@@ -53,6 +54,8 @@ ComfyUI 的本地批量任务编排侧边栏。它读取当前画布中的可执
 在 `UNET 加载器` 下拉框中选择目标节点，点击右侧 `定位` 可以把画布定位到该节点并高亮它。
 
 在 `模型（可多选）` 树中展开目录并勾选模型。勾选文件夹会递归选中其中的全部模型，部分选中时文件夹会显示半选状态。模型选项来自当前 ComfyUI 的 `UNETLoader` 节点定义。
+
+如果工作流包含 `LoraLoaderModelOnly`，在 `LoRA 加载器` 中选择目标节点，然后在 `LoRA（可多选）` 树中按同样方式选择 LoRA。每个任务会把所选值写入该节点的 `lora_name`，不会改动 `strength_model`。没有 LoRA 节点时，LoRA 维度自动退化为一个空维度。
 
 ### 3. 选择正面 CLIP 文本节点
 
@@ -94,7 +97,7 @@ orchestrator/{{model}}/{{value}}_{{index}}
 
 ### 5. 预览和提交
 
-点击 `生成预览` 后，面板会显示任务总数以及设置中指定数量的任务（默认前 5 个）的模型、文本值和文件名。这个操作只在面板中生成预览，不会调用 `/prompt`，也不会入队。
+点击 `生成预览` 后，面板会显示任务总数以及设置中指定数量的任务（默认前 5 个）的模型、LoRA、文本值和文件名。这个操作只在面板中生成预览，不会调用 `/prompt`，也不会入队。
 
 确认数量和命名后，点击 `提交任务`。插件会按顺序为每个组合发送一个 `/prompt` 请求，并在面板中轮询任务历史，显示入队、执行、完成或失败状态。
 
@@ -127,6 +130,7 @@ orchestrator/{{model}}/{{value}}_{{index}}
 | 变量 | 含义 |
 | --- | --- |
 | `{{model}}` | 当前选中的模型名；会清理路径和文件名中的不安全字符 |
+| `{{lora}}` | 当前选中的 LoRA 名；会清理路径和文件名中的不安全字符 |
 | `{{value}}` | 当前文本变量值；会清理路径和文件名中的不安全字符 |
 | `{{index}}` | 当前任务序号，从 `001` 开始 |
 | `{{seed}}` | 基础工作流中找到的第一个 seed（如果存在） |
@@ -151,7 +155,7 @@ orchestrator/{{model}}/{{value}}_{{index}}
 
 - **面板没有出现**：确认目录位于 `custom_nodes/comfyui-orchestrator`，重启 ComfyUI 并刷新浏览器。
 - **面板显示读取失败**：先确保工作流已经打开，再点击 `刷新当前画布`。
-- **模型列表为空**：确认当前选择的是启用的 `UNETLoader`，并确认 ComfyUI 能为该节点返回模型选项。
+- **模型或 LoRA 列表为空**：确认当前选择的是启用的 `UNETLoader` 或 `LoraLoaderModelOnly`，并确认 ComfyUI 能返回对应的节点选项；刷新 ComfyUI 页面后再试。
 - **没有可选的 CLIP 节点**：确认存在启用的 `CLIPTextEncode`；负面条件会被自动排除。
 - **提示找不到占位符**：变量名为 `subject` 时，模板中必须出现精确的 `{{subject}}`，包括大括号和大小写。
 - **预览报错**：先检查模型、文本值、输出节点和最大任务数，再重新点击 `生成预览`。
@@ -161,6 +165,7 @@ orchestrator/{{model}}/{{value}}_{{index}}
 ## 当前限制
 
 - 只处理当前画布中能够转换为 API 工作流的启用节点。
+- LoRA 选择器只处理 `LoraLoaderModelOnly`，不修改其他 LoRA 节点类型。
 - 输出节点必须拥有 `filename_prefix` 输入；不具备该输入的自定义节点不会被列为可命名输出。
 - 任务按顺序提交，当前没有并发提交、暂停、恢复或持久化批次功能。
 - 面板任务记录保存在当前页面内；刷新页面后不会恢复插件自己的任务列表。
@@ -195,6 +200,7 @@ node --check web/js/orchestrator.js
 
 - [服务器通信路由](https://docs.comfy.org/development/comfyui-server/comms_routes)
 - [Workflow API 格式](https://docs.comfy.org/development/api-development/workflow-api-format)
+- [LoRA 加载器（仅模型）](https://github.com/Comfy-Org/embedded-docs/blob/main/comfyui_embedded_docs/docs/LoraLoaderModelOnly/zh.md)
 
 </details>
 
@@ -205,21 +211,22 @@ node --check web/js/orchestrator.js
 
 ## Overview
 
-ComfyUI Batch Orchestrator is a local batch-job sidebar extension for ComfyUI. It reads the executable workflow on the current canvas, lets you select multiple UNET models, replaces a text variable with multiple values, and expands the combinations as a Cartesian product.
+ComfyUI Batch Orchestrator is a local batch-job sidebar extension for ComfyUI. It reads the executable workflow on the current canvas, lets you select multiple UNET models and LoRAs, replaces a text variable with multiple values, and expands the combinations as a model × LoRA × text Cartesian product.
 
 It runs inside ComfyUI as a frontend extension rather than as a separate web service. The panel can:
 
 - Read the current canvas as an API workflow.
-- Discover enabled `UNETLoader`, positive `CLIPTextEncode`, and nameable output nodes.
+- Discover enabled `UNETLoader`, `LoraLoaderModelOnly`, positive `CLIPTextEncode`, and nameable output nodes.
 - Load model choices from the `UNETLoader` node definition and allow multi-selection.
+- Load LoRA choices from the `LoraLoaderModelOnly` node definition and allow folder-based multi-selection.
 - Replace a `{{variable}}` placeholder in a text template.
-- Generate one job for every model/value combination.
+- Generate one job for every model/LoRA/value combination; workflows without a LoRA node keep the model/value behavior.
 - Configure a separate filename-prefix template for each output node.
 - Show a local preview of the first five jobs before submission.
 - Provide manual `Locate` buttons for UNET, CLIP, and output nodes.
 - Exclude CLIP text nodes identified as negative conditioning.
 
-For example, 3 selected models and 4 text values produce 12 independent jobs.
+For example, 3 selected models, 2 LoRAs, and 4 text values produce 24 independent jobs.
 
 Each job is a temporary in-memory copy of the API JSON. The extension does not create a new visual workflow and does not modify or save the current canvas. Jobs are sent to ComfyUI through `/prompt` only after `Submit jobs` is clicked.
 
@@ -249,6 +256,8 @@ Click `Refresh current canvas`. The panel only handles nodes that can be convert
 Choose the target node from `UNET Loader`. Click its `Locate` button to center and highlight the node on the canvas.
 
 Expand folders and check models in the `Models` tree. Checking a folder selects all models below it, and a partially selected folder shows an indeterminate checkbox. The entries come from ComfyUI's current `UNETLoader` node definition.
+
+If the workflow contains `LoraLoaderModelOnly`, choose the target in `LoRA loader`, then select LoRAs in the `LoRAs` tree. Each job writes the selected value to `lora_name` and leaves `strength_model` unchanged. Without a LoRA node, the LoRA dimension is an implicit single empty value.
 
 ### 3. Select the positive CLIP text node
 
@@ -290,7 +299,7 @@ Open `Settings` from the header to change the maximum job count, preview count, 
 
 ### 5. Preview and submit
 
-Click `Generate preview` to show the total job count and the configured number of jobs (five by default), including their model, text value, and filename. Preview generation stays in the panel; it does not call `/prompt` and does not enqueue anything.
+Click `Generate preview` to show the total job count and the configured number of jobs (five by default), including their model, LoRA, text value, and filename. Preview generation stays in the panel; it does not call `/prompt` and does not enqueue anything.
 
 After checking the count and names, click `Submit jobs`. The extension sends one `/prompt` request per combination in order, then polls task history and displays queued, running, completed, or failed states.
 
@@ -323,6 +332,7 @@ Supported dynamic variables:
 | Variable | Meaning |
 | --- | --- |
 | `{{model}}` | Selected model name, sanitized for a safe filename |
+| `{{lora}}` | Selected LoRA name, sanitized for a safe filename |
 | `{{value}}` | Current text value, sanitized for a safe filename |
 | `{{index}}` | One-based job number, padded as `001`, `002`, and so on |
 | `{{seed}}` | The first seed found in the base workflow, when available |
@@ -357,6 +367,7 @@ Rules:
 ## Current limitations
 
 - Only enabled nodes that can be converted to an API workflow are supported.
+- The LoRA selector only handles `LoraLoaderModelOnly`; other LoRA node types are not modified.
 - An output node must expose a `filename_prefix` input to be listed as a nameable output.
 - Jobs are submitted sequentially. There is currently no concurrent submission, pause/resume, or persistent batch feature.
 - The panel's task list is kept in the current page and is not restored after a page refresh.
@@ -391,5 +402,6 @@ Relevant ComfyUI documentation:
 
 - [Server communication routes](https://docs.comfy.org/development/comfyui-server/comms_routes)
 - [Workflow API format](https://docs.comfy.org/development/api-development/workflow-api-format)
+- [LoRA Loader (Model Only)](https://github.com/Comfy-Org/embedded-docs/blob/main/comfyui_embedded_docs/docs/LoraLoaderModelOnly/zh.md)
 
 </details>
