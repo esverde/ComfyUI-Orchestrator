@@ -9,7 +9,56 @@ import {
 
 const EXTENSION_NAME = "comfyui-batch-orchestrator";
 const DEFAULT_MAX_JOBS = 500;
-const PREVIEW_LIMIT = 5;
+const DEFAULT_PREVIEW_LIMIT = 5;
+const MAX_PREVIEW_LIMIT = 50;
+const SETTINGS_STORAGE_KEY = "comfyui-batch-orchestrator.settings";
+
+function positiveInteger(value, fallback, maximum = Number.MAX_SAFE_INTEGER) {
+  const number = Number(value);
+  return Number.isInteger(number) && number > 0 ? Math.min(number, maximum) : fallback;
+}
+
+function normalizePosition(value) {
+  if (!value || !Number.isFinite(Number(value.x)) || !Number.isFinite(Number(value.y))) return null;
+  return { x: Math.round(Number(value.x)), y: Math.round(Number(value.y)) };
+}
+
+function normalizeSettings(value = {}) {
+  const source = value && typeof value === "object" ? value : {};
+  const outputTemplates = Object.fromEntries(
+    Object.entries(source.outputTemplates || {})
+      .filter(([id, template]) => id && typeof template === "string" && template.trim()),
+  );
+  const filenameTemplate = typeof source.filenameTemplate === "string" && source.filenameTemplate.trim()
+    ? source.filenameTemplate.trim()
+    : DEFAULT_FILENAME_TEMPLATE;
+  return {
+    maxJobs: positiveInteger(source.maxJobs, DEFAULT_MAX_JOBS),
+    previewLimit: positiveInteger(source.previewLimit, DEFAULT_PREVIEW_LIMIT, MAX_PREVIEW_LIMIT),
+    panelMode: source.panelMode === "floating" ? "floating" : "fixed",
+    position: normalizePosition(source.position),
+    filenameTemplate,
+    outputTemplates,
+  };
+}
+
+function loadSettings() {
+  try {
+    const raw = localStorage.getItem(SETTINGS_STORAGE_KEY);
+    return normalizeSettings(raw ? JSON.parse(raw) : {});
+  } catch {
+    return normalizeSettings();
+  }
+}
+
+function saveSettings() {
+  try {
+    localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(state.settings));
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 const state = {
   prompt: null,
@@ -18,6 +67,7 @@ const state = {
   taskOrder: "desc",
   templateDirty: false,
   pollTimer: null,
+  settings: loadSettings(),
 };
 
 let panel;
@@ -142,6 +192,203 @@ async function refreshModelSelect() {
   fillSelect(byId("cbo-models"), values, currentModel ? [currentModel] : []);
 }
 
+function outputTemplateFor(id) {
+  // ponytail: node-id keys are enough for the current workflow; use a workflow fingerprint if cross-workflow collisions matter.
+  const key = String(id);
+  return Object.hasOwn(state.settings.outputTemplates, key)
+    ? state.settings.outputTemplates[key]
+    : state.settings.filenameTemplate;
+}
+
+function syncOutputTemplateInputs(id, value = outputTemplateFor(id)) {
+  const key = String(id);
+  document.querySelectorAll(".cbo-output-template, .cbo-setting-output-template").forEach((input) => {
+    if (input.dataset.outputId === key) input.value = value;
+  });
+}
+
+function setOutputTemplate(id, value, sourceInput = null) {
+  const key = String(id);
+  const source = String(value ?? "");
+  if (!source.trim() || source.trim() === state.settings.filenameTemplate) {
+    delete state.settings.outputTemplates[key];
+  } else {
+    state.settings.outputTemplates[key] = source;
+  }
+  const resolved = outputTemplateFor(key);
+  document.querySelectorAll(".cbo-output-template, .cbo-setting-output-template").forEach((input) => {
+    if (input.dataset.outputId === key && input !== sourceInput) input.value = resolved;
+  });
+  saveSettings();
+}
+
+function renderOutputTemplateSettings() {
+  const container = byId("cbo-setting-output-templates");
+  if (!container) return;
+  container.replaceChildren();
+  if (!state.targets.outputs.length) {
+    const empty = document.createElement("div");
+    empty.className = "cbo-settings-hint";
+    empty.textContent = "刷新画布后可为每个输出节点设置单独模板。";
+    container.append(empty);
+    return;
+  }
+  state.targets.outputs.forEach((target) => {
+    const label = document.createElement("label");
+    label.className = "cbo-setting-output-row";
+    label.textContent = `${target.title} (#${target.id})`;
+    const input = document.createElement("input");
+    input.type = "text";
+    input.className = "cbo-setting-output-template";
+    input.dataset.outputId = target.id;
+    input.value = outputTemplateFor(target.id);
+    input.spellcheck = false;
+    input.addEventListener("input", () => {
+      setOutputTemplate(target.id, input.value, input);
+      updatePreview();
+    });
+    label.append(input);
+    container.append(label);
+  });
+}
+
+function clampPanelPosition(position) {
+  const width = panel?.offsetWidth || 370;
+  const height = panel?.offsetHeight || 120;
+  const maxX = Math.max(8, window.innerWidth - width - 8);
+  const maxY = Math.max(8, window.innerHeight - height - 8);
+  return {
+    x: Math.min(maxX, Math.max(8, Number(position.x))),
+    y: Math.min(maxY, Math.max(8, Number(position.y))),
+  };
+}
+
+function setPanelPosition(position) {
+  const safe = clampPanelPosition(position);
+  panel.style.left = `${safe.x}px`;
+  panel.style.top = `${safe.y}px`;
+  panel.style.right = "auto";
+  panel.style.bottom = "auto";
+  return safe;
+}
+
+function defaultFloatingPosition() {
+  return {
+    x: Math.max(8, window.innerWidth - (panel?.offsetWidth || 370) - 16),
+    y: 64,
+  };
+}
+
+function applyPanelPosition(fallback = null) {
+  if (!panel) return;
+  if (state.settings.panelMode === "floating") {
+    const rect = panel.getBoundingClientRect();
+    panel.classList.add("cbo-floating");
+    const position = state.settings.position || fallback || { x: rect.left, y: rect.top };
+    state.settings.position = setPanelPosition(position);
+    return;
+  }
+  panel.classList.remove("cbo-floating", "cbo-dragging");
+  ["left", "top", "right", "bottom"].forEach((property) => {
+    panel.style[property] = "";
+  });
+}
+
+function updateSettingsForm() {
+  const mode = byId("cbo-setting-panel-mode");
+  const maxJobs = byId("cbo-setting-max-jobs");
+  const previewLimit = byId("cbo-setting-preview-limit");
+  const filenameTemplate = byId("cbo-setting-filename-template");
+  if (!mode || !maxJobs || !previewLimit || !filenameTemplate) return;
+  mode.value = state.settings.panelMode;
+  maxJobs.value = String(state.settings.maxJobs);
+  previewLimit.value = String(state.settings.previewLimit);
+  filenameTemplate.value = state.settings.filenameTemplate;
+  renderOutputTemplateSettings();
+}
+
+function saveSettingsFromForm() {
+  try {
+    const maxJobs = Number(byId("cbo-setting-max-jobs").value);
+    const previewLimit = Number(byId("cbo-setting-preview-limit").value);
+    const filenameTemplate = byId("cbo-setting-filename-template").value.trim();
+    if (!Number.isInteger(maxJobs) || maxJobs < 1) throw new Error("最大任务数必须是正整数");
+    if (!Number.isInteger(previewLimit) || previewLimit < 1 || previewLimit > MAX_PREVIEW_LIMIT) {
+      throw new Error(`预览任务数必须是 1-${MAX_PREVIEW_LIMIT} 的整数`);
+    }
+    if (!filenameTemplate) throw new Error("默认保存图片模板不能为空");
+    const oldTemplate = state.settings.filenameTemplate;
+    state.settings = normalizeSettings({
+      ...state.settings,
+      maxJobs,
+      previewLimit,
+      panelMode: byId("cbo-setting-panel-mode").value,
+      filenameTemplate,
+    });
+    if (oldTemplate !== state.settings.filenameTemplate) {
+      state.targets.outputs.forEach((target) => {
+        if (!Object.hasOwn(state.settings.outputTemplates, target.id)) {
+          syncOutputTemplateInputs(target.id, state.settings.filenameTemplate);
+        }
+      });
+    }
+    applyPanelPosition();
+    updateSettingsForm();
+    updateSummary();
+    updatePreview();
+    const persisted = saveSettings();
+    setStatus(persisted ? "设置已保存" : "设置已应用，但浏览器未允许保存", persisted ? "ok" : "error");
+  } catch (error) {
+    setStatus(error.message, "error");
+  }
+}
+
+function resetPanelPosition() {
+  state.settings.position = null;
+  if (state.settings.panelMode === "floating") applyPanelPosition(defaultFloatingPosition());
+  else applyPanelPosition();
+  const persisted = saveSettings();
+  setStatus(persisted ? "面板位置已重置" : "面板位置已重置，但未能保存", persisted ? "ok" : "error");
+}
+
+function installPanelDrag(element) {
+  const header = element.querySelector(".cbo-header");
+  let drag;
+  const finish = (event) => {
+    if (!drag || event.pointerId !== drag.pointerId) return;
+    header.releasePointerCapture?.(event.pointerId);
+    drag = null;
+    element.classList.remove("cbo-dragging");
+    saveSettings();
+  };
+  header.addEventListener("pointerdown", (event) => {
+    if (state.settings.panelMode !== "floating" || event.button !== 0 || event.target.closest?.("button, input, select, textarea")) return;
+    const rect = element.getBoundingClientRect();
+    drag = {
+      pointerId: event.pointerId,
+      offsetX: event.clientX - rect.left,
+      offsetY: event.clientY - rect.top,
+    };
+    header.setPointerCapture?.(event.pointerId);
+    element.classList.add("cbo-dragging");
+  });
+  header.addEventListener("pointermove", (event) => {
+    if (!drag || event.pointerId !== drag.pointerId) return;
+    state.settings.position = setPanelPosition({
+      x: event.clientX - drag.offsetX,
+      y: event.clientY - drag.offsetY,
+    });
+  });
+  header.addEventListener("pointerup", finish);
+  header.addEventListener("pointercancel", finish);
+}
+
+function updateSummary() {
+  const summary = byId("cbo-summary");
+  if (!summary) return;
+  summary.textContent = `可执行节点：${Object.keys(state.prompt || {}).length}；UNET ${state.targets.unet.length}；文本 ${state.targets.text.length}；输出 ${state.targets.outputs.length}；上限 ${state.settings.maxJobs}；预览 ${state.settings.previewLimit} 项`;
+}
+
 function setTargetControls() {
   const unetSelect = byId("cbo-unet-node");
   const textSelect = byId("cbo-text-node");
@@ -186,19 +433,24 @@ function setTargetControls() {
     const filename = document.createElement("input");
     filename.type = "text";
     filename.className = "cbo-output-template";
-    filename.value = DEFAULT_FILENAME_TEMPLATE;
+    filename.dataset.outputId = target.id;
+    filename.value = outputTemplateFor(target.id);
     filename.spellcheck = false;
     filename.setAttribute("aria-label", `${target.title} 文件名模板`);
-    filename.addEventListener("input", updatePreview);
+    filename.addEventListener("input", () => {
+      setOutputTemplate(target.id, filename.value, filename);
+      updatePreview();
+    });
     row.append(header, filename);
     outputContainer.append(row);
   });
+  renderOutputTemplateSettings();
 
   const firstText = state.targets.text[0];
   if (firstText && !state.templateDirty) {
     byId("cbo-template").value = firstText.inputs.text || "";
   }
-  byId("cbo-summary").textContent = `可执行节点：${Object.keys(state.prompt || {}).length}；UNET ${state.targets.unet.length}；文本 ${state.targets.text.length}；输出 ${state.targets.outputs.length}`;
+  updateSummary();
 }
 
 function outputConfigs() {
@@ -206,7 +458,7 @@ function outputConfigs() {
     .filter((row) => row.querySelector("input[type=checkbox]")?.checked)
     .map((row) => ({
       id: row.dataset.id,
-      template: row.querySelector(".cbo-output-template")?.value.trim() || DEFAULT_FILENAME_TEMPLATE,
+      template: row.querySelector(".cbo-output-template")?.value.trim() || state.settings.filenameTemplate,
     }));
 }
 
@@ -217,7 +469,7 @@ function collectConfig() {
     .split(/\r?\n/)
     .map((value) => value.trim())
     .filter(Boolean);
-  const maxJobs = Number(byId("cbo-max-jobs").value) || DEFAULT_MAX_JOBS;
+  const maxJobs = state.settings.maxJobs;
   const models = selectedValues(byId("cbo-models"));
   const config = {
     unetId,
@@ -241,7 +493,7 @@ function sampleJobs(config) {
   const iterator = expandJobs(state.prompt, {
     ...config,
   });
-  while (samples.length < PREVIEW_LIMIT) {
+  while (samples.length < state.settings.previewLimit) {
     const next = iterator.next();
     if (next.done) break;
     samples.push(next.value);
@@ -441,9 +693,19 @@ function buildPanel() {
   element.innerHTML = `
     <header class="cbo-header">
       <div><strong>Batch Orchestrator</strong><span id="cbo-status" class="cbo-status">尚未读取画布</span></div>
-      <div class="cbo-header-actions"><button id="cbo-refresh" type="button">刷新当前画布</button><button id="cbo-toggle" type="button" aria-expanded="true" aria-controls="cbo-body" aria-label="收起面板" title="收起面板">⌃</button></div>
+      <div class="cbo-header-actions"><button id="cbo-refresh" type="button">刷新当前画布</button><button id="cbo-settings-button" type="button" aria-expanded="false" aria-controls="cbo-settings-panel" aria-label="打开设置" title="设置">⚙</button><button id="cbo-toggle" type="button" aria-expanded="true" aria-controls="cbo-body" aria-label="收起面板" title="收起面板">⌃</button></div>
     </header>
     <div class="cbo-body">
+      <div id="cbo-settings-panel" class="cbo-settings-panel" hidden>
+        <div class="cbo-settings-heading"><strong>设置</strong><span>只保存在当前浏览器</span></div>
+        <label>面板模式<select id="cbo-setting-panel-mode"><option value="fixed">固定（右上角）</option><option value="floating">浮动（可拖动）</option></select></label>
+        <label>最大任务数<input id="cbo-setting-max-jobs" type="number" min="1" step="1"></label>
+        <label>预览任务数<input id="cbo-setting-preview-limit" type="number" min="1" max="50" step="1"></label>
+        <label>默认保存图片模板<input id="cbo-setting-filename-template" type="text" spellcheck="false"></label>
+        <div class="cbo-settings-subheading">当前输出节点模板</div>
+        <div id="cbo-setting-output-templates" class="cbo-setting-output-templates"></div>
+        <div class="cbo-settings-actions"><button id="cbo-reset-position" type="button">重置位置</button><button id="cbo-save-settings" class="primary" type="button">保存设置</button></div>
+      </div>
       <div id="cbo-summary" class="cbo-summary">尚未读取画布</div>
       <label>UNET 加载器<div class="cbo-node-control"><select id="cbo-unet-node"></select><button id="cbo-unet-locate" class="cbo-locate" type="button" aria-label="定位 UNET 加载器">定位</button></div></label>
       <label>模型（可多选）<select id="cbo-models" multiple size="6"></select></label>
@@ -452,13 +714,16 @@ function buildPanel() {
       <div class="cbo-variable-row"><label>变量名<input id="cbo-variable" value="subject" spellcheck="false"></label><button id="cbo-insert-variable" type="button">插入变量</button></div>
       <label>变量值（每行一个）<textarea id="cbo-values" rows="4" placeholder="cat&#10;dog"></textarea></label>
       <fieldset><legend>输出文件名（可逐个设置）</legend><div id="cbo-output-nodes" class="cbo-output-nodes"></div></fieldset>
-      <label>最大任务数<input id="cbo-max-jobs" type="number" min="1" value="500"></label>
-      <pre id="cbo-preview" class="cbo-preview">填好参数后点击“生成预览”；只展示前 5 项，不会提交任务。</pre>
+      <pre id="cbo-preview" class="cbo-preview">填好参数后点击“生成预览”；预览数量可在设置中调整，不会提交任务。</pre>
       <div class="cbo-actions"><button id="cbo-preview-button" type="button">生成预览</button><button id="cbo-submit" class="primary" type="button">提交任务</button></div>
       <div class="cbo-task-toolbar"><div id="cbo-task-summary" class="cbo-task-summary">尚未提交任务</div><button id="cbo-task-order" type="button" aria-label="当前最新任务在前，点击切换为最早任务在前">新→旧</button></div>
       <div id="cbo-tasks" class="cbo-tasks"></div>
     </div>`;
   document.body.append(element);
+
+  updateSettingsForm();
+  applyPanelPosition();
+  installPanelDrag(element);
 
   byId("cbo-toggle").addEventListener("click", () => {
     const closed = element.classList.toggle("closed");
@@ -468,6 +733,24 @@ function buildPanel() {
     toggle.setAttribute("aria-label", closed ? "展开面板" : "收起面板");
     toggle.title = closed ? "展开面板" : "收起面板";
   });
+  byId("cbo-settings-button").addEventListener("click", () => {
+    if (element.classList.contains("closed")) {
+      element.classList.remove("closed");
+      const toggle = byId("cbo-toggle");
+      toggle.textContent = "⌃";
+      toggle.setAttribute("aria-expanded", "true");
+      toggle.setAttribute("aria-label", "收起面板");
+      toggle.title = "收起面板";
+    }
+    const settings = byId("cbo-settings-panel");
+    const open = settings.hidden;
+    settings.hidden = !open;
+    const button = byId("cbo-settings-button");
+    button.setAttribute("aria-expanded", String(open));
+    if (open) updateSettingsForm();
+  });
+  byId("cbo-reset-position").addEventListener("click", resetPanelPosition);
+  byId("cbo-save-settings").addEventListener("click", saveSettingsFromForm);
   byId("cbo-refresh").addEventListener("click", refresh);
   byId("cbo-submit").addEventListener("click", submit);
   byId("cbo-preview-button").addEventListener("click", () => updatePreview(true));
@@ -504,9 +787,14 @@ function buildPanel() {
     state.templateDirty = true;
     updatePreview();
   });
-  ["cbo-models", "cbo-variable", "cbo-values", "cbo-max-jobs"].forEach((id) => {
+  ["cbo-models", "cbo-variable", "cbo-values"].forEach((id) => {
     byId(id).addEventListener("input", updatePreview);
     byId(id).addEventListener("change", updatePreview);
+  });
+  window.addEventListener("resize", () => {
+    if (panel && state.settings.panelMode === "floating") {
+      state.settings.position = setPanelPosition(state.settings.position || defaultFloatingPosition());
+    }
   });
   return element;
 }
@@ -516,6 +804,7 @@ app.registerExtension({
   async setup() {
     installStyles();
     panel = buildPanel();
+    applyPanelPosition();
     await refresh();
   },
 });

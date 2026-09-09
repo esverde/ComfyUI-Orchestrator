@@ -90,13 +90,15 @@ orchestrator/{{model}}_{{value}}_{{index}}
 orchestrator/{{model}}/{{value}}_{{index}}
 ```
 
+点击标题栏的 `设置` 可以修改最大任务数、预览任务数、面板模式和默认保存图片模板。设置只保存在当前浏览器的 `localStorage` 中，不会写入仓库；每个输出节点在主面板或设置面板中单独修改的模板也会被记住。
+
 ### 5. 预览和提交
 
-点击 `生成预览` 后，面板会显示任务总数以及前 5 个任务的模型、文本值和文件名。这个操作只在面板中生成预览，不会调用 `/prompt`，也不会入队。
+点击 `生成预览` 后，面板会显示任务总数以及设置中指定数量的任务（默认前 5 个）的模型、文本值和文件名。这个操作只在面板中生成预览，不会调用 `/prompt`，也不会入队。
 
 确认数量和命名后，点击 `提交任务`。插件会按顺序为每个组合发送一个 `/prompt` 请求，并在面板中轮询任务历史，显示入队、执行、完成或失败状态。
 
-`最大任务数` 默认是 500，用于避免误操作产生过大的批次。需要更大的批次时，可以先确认模型数和文本值数，再调整这个上限。
+`最大任务数` 默认是 500，用于避免误操作产生过大的批次；预览数量默认为 5，最多可设置为 50。两项都在标题栏的 `设置` 中调整。
 
 ## 一个虚构示例
 
@@ -154,6 +156,7 @@ orchestrator/{{model}}/{{value}}_{{index}}
 - **提示找不到占位符**：变量名为 `subject` 时，模板中必须出现精确的 `{{subject}}`，包括大括号和大小写。
 - **预览报错**：先检查模型、文本值、输出节点和最大任务数，再重新点击 `生成预览`。
 - **定位没有效果**：先刷新当前画布；定位按钮只操作当前打开的画布，不会改变工作流内容。
+- **面板位置或设置没有保留**：设置保存在当前浏览器的 `localStorage`；如果浏览器禁用了站点存储，设置只能在当前页面暂时生效。
 
 ## 当前限制
 
@@ -161,6 +164,7 @@ orchestrator/{{model}}/{{value}}_{{index}}
 - 输出节点必须拥有 `filename_prefix` 输入；不具备该输入的自定义节点不会被列为可命名输出。
 - 任务按顺序提交，当前没有并发提交、暂停、恢复或持久化批次功能。
 - 面板任务记录保存在当前页面内；刷新页面后不会恢复插件自己的任务列表。
+- 面板默认固定在右上角；切换为浮动模式后可拖动标题栏，位置会保存在当前浏览器。
 - 负面 CLIP 的识别依赖连接输入名称或节点标题。使用完全自定义命名的复杂工作流时，建议检查自动发现结果。
 
 ## 开发与测试
@@ -282,13 +286,15 @@ Static `/` creates a relative subdirectory below ComfyUI's output directory:
 orchestrator/{{model}}/{{value}}_{{index}}
 ```
 
+Open `Settings` from the header to change the maximum job count, preview count, panel mode, and default output filename template. Settings are stored only in the current browser's `localStorage`, not in the repository; per-output template overrides made in either panel are remembered too.
+
 ### 5. Preview and submit
 
-Click `Generate preview` to show the total job count and the first five jobs, including their model, text value, and filename. Preview generation stays in the panel; it does not call `/prompt` and does not enqueue anything.
+Click `Generate preview` to show the total job count and the configured number of jobs (five by default), including their model, text value, and filename. Preview generation stays in the panel; it does not call `/prompt` and does not enqueue anything.
 
 After checking the count and names, click `Submit jobs`. The extension sends one `/prompt` request per combination in order, then polls task history and displays queued, running, completed, or failed states.
 
-`Maximum jobs` defaults to 500 to reduce accidental oversized batches. Check the model/value counts before raising the limit.
+`Maximum jobs` defaults to 500 to reduce accidental oversized batches; the preview count defaults to five and can be set up to 50. Both values are changed from `Settings` in the header.
 
 ## Fictional example
 
@@ -346,6 +352,7 @@ Rules:
 - **The placeholder is reported as missing**: if the variable name is `subject`, the template must contain the exact `{{subject}}`, including braces and case.
 - **Preview reports an error**: check the model selection, text values, output selection, and maximum-job limit, then generate the preview again.
 - **Locate does nothing**: refresh the current canvas first. Locate only acts on the currently open canvas and does not change workflow content.
+- **Panel settings or position are not retained**: settings are stored in the current browser's `localStorage`; if site storage is disabled, they only apply to the current page.
 
 ## Current limitations
 
@@ -353,6 +360,7 @@ Rules:
 - An output node must expose a `filename_prefix` input to be listed as a nameable output.
 - Jobs are submitted sequentially. There is currently no concurrent submission, pause/resume, or persistent batch feature.
 - The panel's task list is kept in the current page and is not restored after a page refresh.
+- The panel is fixed in the top-right by default; floating mode enables header dragging and remembers the position in the current browser.
 - Negative-CLIP detection uses connection input names or node titles. For complex custom workflows with fully custom naming, verify the discovered target list.
 
 ## Development and testing

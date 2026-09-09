@@ -1,2 +1,11 @@
 .codegraph
 /docs/
+
+# AI Client
+GEMINI.md
+AGENTS.md
+CLAUDE.md
+.claude/
+.gemini/
+.qwen/
+.openai/
