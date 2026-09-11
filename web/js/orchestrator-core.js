@@ -15,7 +15,6 @@ function nodeTitle(id, graphNode) {
 function target(id, node, graphNode) {
   return {
     id: String(id),
-    classType: String(node.class_type || ""),
     title: nodeTitle(id, graphNode),
     inputs: asInputs(node),
   };
@@ -122,7 +121,6 @@ function normalizeVariableValue(value) {
     ...(record.id ? { id: String(record.id) } : {}),
     text,
     label: String(record.label ?? ""),
-    tags: Array.isArray(record.tags) ? [...record.tags].map(String) : [],
   };
 }
 
