@@ -610,7 +610,7 @@ async function storeTemplate(name, body, tags, existing) {
     ? state.library.templates.map((record) => record.id === normalized.id ? normalized : record)
     : [...state.library.templates, normalized];
   state.library = { ...state.library, templates };
-  renderTemplateRecords();
+  renderTemplates();
 }
 
 async function saveCurrentTemplate() {
@@ -654,7 +654,7 @@ async function removeTemplate(id) {
       ...state.library,
       templates: state.library.templates.filter((record) => record.id !== id),
     };
-    renderTemplateRecords();
+    renderTemplates();
     setStatus("模板已删除", "ok");
   } catch (error) {
     setStatus(error.message, "error");
@@ -678,7 +678,7 @@ async function recordTemplateUse(body) {
     const next = normalizeLibraryData({ ...state.library, templateHistory: history }, now);
     await replaceLibraryData(next);
     state.library = { ...next, ready: true };
-    renderTemplateRecords();
+    renderTemplateHistory();
   } catch (error) {
     setStatus(`模板历史未保存：${error.message}`, "error");
   }
