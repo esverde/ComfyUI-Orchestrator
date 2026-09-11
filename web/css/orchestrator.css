@@ -17,7 +17,6 @@
   font: 13px/1.35 system-ui, sans-serif;
 }
 
-/* 顶栏控件组：贴合 ComfyUI 自带 .comfyui-button-group 的观感 */
 #cbo-topbar {
   display: flex;
   align-items: center;
@@ -48,11 +47,9 @@
 #cbo-topbar button:hover { background: var(--cbo-hover); color: var(--cbo-hover-fg); }
 #cbo-topbar button:disabled { cursor: wait; opacity: .55; }
 
-/* SVG 箭头几何居中，旋转不会像文字字形那样产生位移 */
 .cbo-chevron { display: block; transition: transform .15s ease; }
 #cbo-toggle.cbo-open .cbo-chevron { transform: rotate(180deg); }
 
-/* 锚定在顶栏按钮下方的浮层，位置由 JS 计算 */
 #cbo-panel {
   position: fixed;
   z-index: 10000;
@@ -86,7 +83,6 @@
 .cbo-settings-actions .primary { flex: 1; background: var(--cbo-accent); border-color: var(--cbo-border); }
 
 .cbo-body {
-  /* 高度由 positionPanel() 按视口剩余空间设定 */
   overflow: auto;
   padding: 10px;
 }
@@ -150,7 +146,6 @@
 }
 .cbo-tree-toggle:hover,
 .cbo-tree-toggle:focus-visible { color: var(--cbo-fg); background: var(--cbo-hover); }
-/* 折叠时朝右、展开时朝下，和顶栏用同一个 SVG */
 .cbo-tree-toggle { display: flex; align-items: center; justify-content: center; }
 .cbo-tree-toggle .cbo-chevron { transform: rotate(-90deg); }
 .cbo-tree-toggle.cbo-open .cbo-chevron { transform: none; }

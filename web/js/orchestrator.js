@@ -83,12 +83,10 @@ let panel;
 let topbar;
 
 function byId(id) {
-  // 顶栏可能还在等 ComfyUI 渲染完才挂载，这段时间它不在文档里，
-  // getElementById 找不到其中的控件——回退到元素自身查找，否则绑不上监听器。
+  // 顶栏挂载前不在文档里，须回退到元素自身查找，否则绑不上监听器。
   return document.getElementById(id) || topbar?.querySelector(`#${id}`) || null;
 }
 
-// ComfyUI 原生 toast：面板收起时状态栏看不见，错误不能就这么咽掉。
 function notify(detail, severity = "error") {
   app.extensionManager.toast.add({
     severity,
@@ -256,7 +254,7 @@ function addSlotValue(slot, text) {
   const value = String(text).trim();
   if (!value) return false;
   if (slot.values.some((item) => item.text === value)) return false;
-  // 同 key 同文本的库记录直接带上 label/tags，文件名模板的 {{key_label}} 才有内容。
+  // 复用库记录的 label/tags，{{变量名_label}} 才有内容。
   const known = state.library.variables.find((record) => record.key === slot.key && record.text === value);
   slot.values.push(known ? cloneVariableRecord(known) : { key: slot.key, text: value, label: "", tags: [] });
   return true;
@@ -326,7 +324,6 @@ function renderVariableSlots() {
     }, { className: "danger", title: "删除这个变量", ariaLabel: `删除变量 ${slot.key || slotIndex + 1}` });
     header.append(key, count, insert, save, remove);
 
-    // 原生 datalist：输入时直接联想该变量名在库里已有的值，省掉一个自建选择器。
     const listId = `cbo-variable-options-${slotIndex}`;
     const datalist = document.createElement("datalist");
     datalist.id = listId;
@@ -350,7 +347,7 @@ function renderVariableSlots() {
       if (!added) return;
       renderVariableSlots();
       updatePreview();
-      // 重渲染会销毁这个输入框，把焦点还回去才能连着录入下一个值。
+      // 重渲染销毁了输入框，还回焦点才能连续录入。
       byId("cbo-variable-slots")?.querySelectorAll(".cbo-variable-entry")[slotIndex]?.focus();
     };
     entry.addEventListener("keydown", (event) => {
@@ -358,7 +355,6 @@ function renderVariableSlots() {
       event.preventDefault();
       commit();
     });
-    // 从 datalist 选中或粘贴多行时，change 也要收口。
     entry.addEventListener("change", commit);
 
     const values = document.createElement("div");
@@ -733,7 +729,6 @@ function locateNode(id) {
   }
   canvas.deselectAll();
   canvas.select(node);
-  // 对当前选中项做平滑归位，省去自己算 bounds 和猜 animateToBounds 的参数。
   canvas.fitViewToSelectionAnimated();
   canvas.setDirty(true, true);
   setStatus(`已定位并高亮：${node.title || node.type || `节点 #${id}`}`, "ok");
@@ -772,12 +767,11 @@ async function listOptions(nodeType, inputName, currentValue) {
     const values = optionValuesFromObjectInfo(await getJson(`/object_info/${nodeType}`), nodeType, inputName);
     if (values.length) return values;
   } catch {
-    // 读不到列表时，当前工作流的取值仍可跑单组合冒烟。
+    // 读不到列表时退回当前工作流的取值。
   }
   return currentValue ? [currentValue] : [];
 }
 
-// 三处目标节点下拉的选项文案完全一致，label 在这里拼即可。
 function fillSelect(select, targets) {
   select.replaceChildren();
   targets.forEach((target, index) => {
@@ -888,7 +882,7 @@ function renderValueTree(container, values, selectedValuesList, emptyLabel, root
   revealCheckedLeaves(container);
 }
 
-// 全部默认折叠，但已勾选的项必须可见，否则预选中的当前模型等于凭空消失。
+// 树默认全折叠，已勾选项必须展开祖先，否则预选中的模型不可见。
 function revealCheckedLeaves(container) {
   for (const leaf of container.querySelectorAll("input[data-tree-value]:checked")) {
     for (let group = leaf.closest(".cbo-tree-children"); group; group = group.parentElement?.closest(".cbo-tree-children")) {
@@ -981,7 +975,6 @@ function renderOutputTemplateSettings() {
   });
 }
 
-// 面板锚在顶栏按钮下方展开，样式参考官方任务队列浮层。
 function positionPanel() {
   if (!panel || panel.hidden || !topbar) return;
   const anchor = topbar.getBoundingClientRect();
@@ -1048,7 +1041,6 @@ function saveSettingsFromForm() {
       });
     }
     applyLoraVisibility();
-    // 重新打开 LoRA 时要把树重新拉一次，否则停在关闭前的空列表。
     if (!oldLoraEnabled && state.settings.loraEnabled) {
       refreshLoraSelect().then(updatePreview).catch((error) => setStatus(`读取 LoRA 列表失败：${error.message}`, "error"));
     }
@@ -1303,7 +1295,7 @@ async function pollHistory() {
         if (task.status === "failed") task.error = entry.status.status_str || "执行失败";
       }
     } catch {
-      // A history entry can briefly lag behind queue submission.
+      // 历史记录可能短暂滞后于入队。
     }
   }));
   renderTasks();
@@ -1348,7 +1340,7 @@ async function submit() {
       state.tasks.push(task);
       processed += 1;
       if (task.status === "failed") failed += 1;
-      // 进度不逐条弹提示，renderTasks() 已实时刷新任务汇总行。
+      // 不逐条弹提示，renderTasks() 已实时刷新汇总行。
       renderTasks();
     }
     notify(
@@ -1372,37 +1364,28 @@ function installStyles() {
   document.head.append(link);
 }
 
-// 各版本 Crystools 的容器 class 不尽相同，按前缀匹配比枚举可靠。
 const CRYSTOOLS_SELECTOR = "[class*='crystools']";
 
-// 字体里的 ⌄ 字形本身不垂直居中，旋转后仍会偏移；SVG 才能真正居中。
 const CHEVRON = `<svg class="cbo-chevron" viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
   <path d="M3.5 6 L8 10.5 L12.5 6" fill="none" stroke="currentColor" stroke-width="1.8"
         stroke-linecap="round" stroke-linejoin="round"/>
 </svg>`;
 
-// 新版前端会保留一个 display:none 的旧版 .comfyui-menu，光看 isConnected
-// 会把「插进了隐藏容器」误判成挂载成功，所以一律以实际可见为准。
-// 顶栏容器：以官方设置按钮组的父元素为准，比猜类名可靠。
 function topbarContainer() {
   return app.menu?.settingsGroup?.element?.parentElement || null;
 }
 
-// 只取顶栏内的 Crystools，避免 [class*='crystools'] 命中它设置面板里的元素。
-// 再上溯到顶栏的直接子元素，这样插入点在整个监视器组之前而非组内部。
 function crystoolsGroup(menu) {
   let node = menu.querySelector(CRYSTOOLS_SELECTOR);
   while (node && node.parentElement !== menu) node = node.parentElement;
   return node;
 }
 
-// 只插入一次，之后绝不再移动——反复插拔正是之前顶栏闪烁的原因。
 function mountTopbar(waitForCrystools) {
   const menu = topbarContainer();
   if (!menu) return false;
   const crystools = crystoolsGroup(menu);
   if (!crystools && waitForCrystools) return false;
-  // 有 Crystools 就插到它左边；没装则退到设置按钮组之前。
   (crystools || app.menu.settingsGroup.element).before(topbar);
   positionPanel();
   return true;
@@ -1418,8 +1401,6 @@ function buildTopbar() {
     <button id="cbo-settings-button" type="button" aria-label="打开设置" title="设置">⚙</button>
     <button id="cbo-toggle" type="button" aria-expanded="false" aria-controls="cbo-panel" aria-label="展开面板" title="展开面板">${CHEVRON}</button>`;
 
-  // 顶栏是 Vue 异步渲染的，Crystools 也可能晚到；宽限期内等它，
-  // 过了就不再等（没装 Crystools 的情况也要能挂上）。
   const deadline = Date.now() + 3000;
   const timer = setInterval(() => {
     if (mountTopbar(Date.now() < deadline) || Date.now() >= deadline + 7000) clearInterval(timer);
@@ -1525,7 +1506,7 @@ function buildPanel() {
       </section>
     </dialog>`;
   document.body.append(element);
-  // 弹窗必须挂在 body 上：面板收起时是 hidden，showModal() 在 display:none 的祖先里不会显示。
+  // 必须挂到 body：面板 hidden 时 showModal() 在 display:none 祖先内不显示。
   element.querySelectorAll("dialog").forEach((dialog) => document.body.append(dialog));
   buildTopbar();
 
@@ -1595,7 +1576,6 @@ function buildPanel() {
     byId(id).addEventListener("change", updatePreview);
   });
   window.addEventListener("resize", positionPanel);
-  // 点面板或顶栏以外的地方就收起，和官方任务队列浮层一致。
   document.addEventListener("pointerdown", (event) => {
     if (panel.hidden) return;
     if (panel.contains(event.target) || topbar?.contains(event.target)) return;

@@ -234,6 +234,28 @@ node --check web/js/orchestrator-library.js
 node --check web/js/orchestrator.js
 ```
 
+## 实现说明
+
+以下几点是代码里不易一眼看出、改动时容易踩坑的约束。
+
+### 顶栏挂载
+
+面板的控件组注入 ComfyUI 顶部菜单栏，挂载逻辑有三条硬性要求：
+
+- **只插入一次，之后绝不移动。** 早期版本在插入后用 `getBoundingClientRect` 判断可见性，测得宽高为 0 就移除重试；页面初始布局尚未完成时必然测到 0，于是陷入插入→移除→再插入的循环，叠加 Crystools 监视器每秒更新 DOM 触发观察器，表现为菜单持续闪烁。
+- **顶栏容器以官方设置按钮组的父元素为准**（`app.menu.settingsGroup.element.parentElement`），不猜类名。
+- **排在 Crystools 左侧**：等它出现后插到它前面。Crystools 的容器 class 各版本不一，用 `[class*='crystools']` 前缀匹配，并限定在顶栏容器内查找——否则会命中它设置面板里的元素而插错位置。未安装 Crystools 时退回设置按钮组之前；顶栏是 Vue 异步渲染的，轮询有宽限期。
+
+### 变量名规则
+
+变量名允许中文等 Unicode 字母开头，`{{上衣}}`、`{{subject}}` 都合法，规则为 `/^\p{L}[\p{L}\p{N}_]*$/u`。`orchestrator-core.js` 与 `orchestrator-library.js` 两处必须保持一致，否则面板里能用的变量名存不进库。
+
+### 变量库版本
+
+导出文件带 `schema` 和 `version`。当前版本为 2，比 v1 多了 `variableSets`（组合变量）存储。导入时接受 v1 文件，缺失的存储按空数组处理；高于当前版本的文件会被拒绝，因为结构无法预知。IndexedDB 通过 `onupgradeneeded` 自动补建新存储。
+
+记录级的类型强制与必填校验统一在 `normalizeLibraryData` 中完成，导入路径只额外校验外层信封（schema、version、各存储必须是数组）。
+
 ## 数据边界
 
 插件不提供外部云服务，也不包含遥测逻辑。它只读取当前 ComfyUI 前端可访问的画布和节点定义；点击提交后，工作流副本和参数会发送回当前 ComfyUI 实例。变量库、模板和历史只写入当前浏览器 IndexedDB；JSON 导入/导出是用户主动进行的本地迁移，不是服务端同步。
@@ -461,6 +483,28 @@ node --check web/js/orchestrator-core.js
 node --check web/js/orchestrator-library.js
 node --check web/js/orchestrator.js
 ```
+
+## Implementation notes
+
+These constraints are not obvious from the code and are easy to break.
+
+### Topbar mounting
+
+The control group is injected into the ComfyUI top menu bar. Three hard requirements:
+
+- **Insert once, never move afterwards.** An earlier version checked `getBoundingClientRect` after insertion and removed the element when it measured zero. Initial layout has not settled at that point, so it always measured zero, producing an insert → remove → insert loop. Combined with the Crystools monitor mutating the DOM every second to refresh its readouts, this made the menu flicker continuously.
+- **Locate the topbar container via the official settings button group's parent** (`app.menu.settingsGroup.element.parentElement`) rather than guessing class names.
+- **Sit to the left of Crystools**: wait for it, then insert before it. Its container class differs across versions, so matching uses the `[class*='crystools']` prefix, scoped to the topbar container — an unscoped query also matches elements inside its settings panel and would insert in the wrong place. Without Crystools installed, fall back to inserting before the settings button group. The topbar is rendered asynchronously by Vue, so polling has a grace period.
+
+### Variable name rules
+
+Variable names may start with any Unicode letter, so both `{{subject}}` and `{{上衣}}` are valid; the rule is `/^\p{L}[\p{L}\p{N}_]*$/u`. It must stay identical in `orchestrator-core.js` and `orchestrator-library.js`, otherwise names accepted by the panel cannot be saved to the library.
+
+### Library version
+
+Exports carry `schema` and `version`. The current version is 2, adding the `variableSets` store on top of v1. Imports accept v1 files and treat missing stores as empty arrays; files newer than the current version are rejected because their structure cannot be anticipated. IndexedDB creates the new store automatically through `onupgradeneeded`.
+
+Per-record type coercion and required-field validation all happen in `normalizeLibraryData`; the import path only additionally validates the outer envelope (schema, version, and that each store is an array).
 
 ## Data boundary
 

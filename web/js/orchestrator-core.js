@@ -110,7 +110,6 @@ export function buildModelTree(values) {
   return roots;
 }
 
-// 允许中文等 Unicode 字母做变量名，例如 {{上衣}}。
 const VARIABLE_KEY = /^\p{L}[\p{L}\p{N}_]*$/u;
 const PLACEHOLDER = /\{\{(\p{L}[\p{L}\p{N}_]*)\}\}/gu;
 

@@ -4,7 +4,6 @@ export const MAX_TEMPLATE_HISTORY = 100;
 
 const DB_NAME = "comfyui-batch-orchestrator-library";
 const STORE_NAMES = ["variables", "variableSets", "templates", "templateHistory"];
-// 与 orchestrator-core.js 保持一致：允许中文等 Unicode 字母做变量名。
 const VARIABLE_KEY = /^\p{L}[\p{L}\p{N}_]*$/u;
 
 function makeId() {
@@ -195,7 +194,6 @@ export function mergeLibraryData(current = {}, incoming = {}, now = Date.now()) 
 function assertArrayEnvelope(source) {
   if (!source || typeof source !== "object" || Array.isArray(source)) throw new Error("变量库导入格式无效");
   if (source.schema !== LIBRARY_SCHEMA) throw new Error("变量库 schema 不匹配");
-  // v1 导出没有 variableSets，按缺失即为空处理；更高版本无法预知结构，拒绝。
   if (!Number.isInteger(source.version) || source.version < 1 || source.version > LIBRARY_VERSION) {
     throw new Error("变量库版本不支持");
   }
@@ -217,7 +215,6 @@ export function parseLibraryExport(text) {
     throw new Error("变量库 JSON 格式无效");
   }
   assertArrayEnvelope(source);
-  // normalizeLibraryData 已对每条记录做类型强制与必填校验，失败时抛出带字段名的错误。
   return normalizeLibraryData(source);
 }
 
