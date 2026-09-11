@@ -78,6 +78,7 @@ const state = {
   library: { ...normalizeLibraryData(), ready: false },
   variableSlots: [{ key: "subject", values: [] }],
   variableEditorId: "",
+  templateEditorId: "",
 };
 
 let panel;
@@ -562,7 +563,7 @@ function renderTemplateRecords() {
 }
 
 function openTemplateEditor(record = null) {
-  byId("cbo-template-record-id").value = record?.id || "";
+  state.templateEditorId = record?.id || "";
   byId("cbo-template-name").value = record?.name || "";
   byId("cbo-template-tags").value = record?.tags?.join(", ") || "";
   if (record) {
@@ -581,7 +582,7 @@ function loadTemplate(record) {
 }
 
 function clearTemplateEditor() {
-  byId("cbo-template-record-id").value = "";
+  state.templateEditorId = "";
   byId("cbo-template-name").value = "";
   byId("cbo-template-tags").value = "";
 }
@@ -593,7 +594,7 @@ async function saveCurrentTemplate() {
     const body = byId("cbo-template").value;
     if (!name) throw new Error("模板名称不能为空");
     if (!body.trim()) throw new Error("模板内容不能为空");
-    const existing = state.library.templates.find((record) => record.id === byId("cbo-template-record-id").value)
+    const existing = state.library.templates.find((record) => record.id === state.templateEditorId)
       || state.library.templates.find((record) => record.name === name);
     const now = Date.now();
     const normalized = normalizeLibraryData({ templates: [{
@@ -1469,7 +1470,6 @@ function buildPanel() {
       <div class="cbo-dialog-header"><strong id="cbo-template-manager-title">模板库</strong><form method="dialog"><button class="cbo-btn" aria-label="关闭模板库">关闭</button></form></div>
       <section class="cbo-manager-section">
         <div class="cbo-manager-heading"><strong>保存当前模板</strong><span>保存的是主面板文本框里的内容</span></div>
-        <input id="cbo-template-record-id" type="hidden">
         <div class="cbo-manager-filter"><label>模板名称<input id="cbo-template-name" type="text" placeholder="如：服装组合"></label><label>标签<input id="cbo-template-tags" type="text" placeholder="标签，用逗号分隔"></label></div>
         <div class="cbo-manager-actions"><button id="cbo-template-save" class="cbo-btn primary" type="button">保存当前模板</button><button id="cbo-template-clear" class="cbo-btn" type="button">清空模板编辑</button></div>
       </section>

@@ -259,7 +259,7 @@
 .cbo-manager-heading span { color: var(--cbo-muted); font-size: 11px; }
 .cbo-manager-filter { display: grid; grid-template-columns: 1fr 180px; gap: 7px; margin-bottom: 7px; }
 .cbo-dialog select,
-.cbo-dialog input:not([type="hidden"]):not([type="checkbox"]) { box-sizing: border-box; width: 100%; margin-top: 3px; padding: 5px 6px; color: var(--cbo-input-fg); background: var(--cbo-input-bg); border: 1px solid var(--cbo-border); border-radius: 4px; font: inherit; }
+.cbo-dialog input:not([type="checkbox"]) { box-sizing: border-box; width: 100%; margin-top: 3px; padding: 5px 6px; color: var(--cbo-input-fg); background: var(--cbo-input-bg); border: 1px solid var(--cbo-border); border-radius: 4px; font: inherit; }
 .cbo-dialog input:focus,
 .cbo-dialog select:focus { outline: 1px solid var(--cbo-focus); border-color: var(--cbo-focus); }
 .cbo-variable-slots { display: grid; gap: 7px; margin-bottom: 6px; }
