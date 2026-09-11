@@ -1152,7 +1152,6 @@ function collectConfig() {
     models,
     loras,
     variables,
-    maxJobs,
   };
   if (!config.unetId || !config.textId) throw new Error("请先刷新并选择目标节点");
   if (!models.length) throw new Error("请至少选择一个 UNET 模型");
