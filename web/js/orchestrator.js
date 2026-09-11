@@ -520,6 +520,11 @@ function renderVariableSets() {
   }
 }
 
+function previewButton() {
+  return button("预览", (event) =>
+    event.currentTarget.closest(".cbo-library-record").classList.toggle("cbo-expanded"));
+}
+
 function renderTemplates() {
   const container = byId("cbo-template-records");
   if (!container) return;
@@ -534,7 +539,7 @@ function renderTemplates() {
   }
   for (const record of state.library.templates) {
     container.append(libraryRow(record.name, record.body, [
-      button("预览", (event) => event.currentTarget.closest(".cbo-library-record").classList.toggle("cbo-expanded")),
+      previewButton(),
       button("加载", () => loadTemplate(record)),
       button("编辑", () => openTemplateEditor(record)),
       button("删除", () => removeTemplate(record.id), { className: "danger" }),
@@ -551,12 +556,10 @@ function renderTemplateHistory() {
     return;
   }
   for (const record of state.library.templateHistory) {
-    const row = document.createElement("div");
-    row.className = "cbo-library-history-row";
-    const text = document.createElement("span");
-    text.textContent = `${record.name}：${record.body}`;
-    row.append(text, button("加载", () => loadTemplate(record)));
-    container.append(row);
+    container.append(libraryRow(record.name, record.body, [
+      previewButton(),
+      button("加载", () => loadTemplate(record)),
+    ]));
   }
 }
 

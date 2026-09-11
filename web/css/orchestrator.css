@@ -172,7 +172,7 @@
 .cbo-tree-empty { padding: 10px 6px; color: var(--cbo-muted); font-size: 11px; }
 .cbo-node-control { display: flex; align-items: center; gap: 6px; }
 .cbo-node-control select { flex: 1; min-width: 0; }
-.cbo-node-control .cbo-locate { margin-top: 0; padding: 6px 10px; }
+.cbo-node-control .cbo-locate { padding: 6px 10px; }
 .cbo-section-heading { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; color: var(--cbo-fg); }
 .cbo-section-heading > span:first-child { flex: 1; }
 .cbo-section-heading .cbo-btn { flex: 0 0 auto; }
@@ -209,7 +209,6 @@
 .cbo-check-row { display: flex !important; align-items: center; gap: 6px; margin: 3px 0 !important; }
 .cbo-check-row input { width: auto; margin: 0; }
 .cbo-locate { flex: 0 0 auto; padding: 5px 9px; background: var(--cbo-secondary-bg); border-radius: 3px; font-size: 11px; }
-.cbo-output-template { margin-top: 5px !important; }
 
 .cbo-preview-box { margin: 12px 0; }
 .cbo-preview-box summary { color: var(--cbo-fg); cursor: pointer; }
@@ -263,8 +262,7 @@
 .cbo-manager-heading,
 .cbo-manager-actions,
 .cbo-variable-slot-header,
-.cbo-library-record,
-.cbo-library-history-row { display: flex; align-items: center; gap: 7px; }
+.cbo-library-record { display: flex; align-items: center; gap: 7px; }
 .cbo-dialog-header,
 .cbo-manager-heading,
 .cbo-manager-actions { justify-content: space-between; }
@@ -343,8 +341,6 @@
 .cbo-library-editor input:nth-child(4),
 .cbo-library-editor input:nth-child(5),
 .cbo-library-editor .cbo-manager-actions { grid-column: 1 / -1; }
-.cbo-library-history-row { justify-content: space-between; min-width: 0; padding: 8px 10px; background: var(--cbo-secondary-bg); border-radius: 4px; }
-.cbo-library-history-row span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cbo-library-empty { padding: 8px 5px; color: var(--cbo-muted); font-size: 11px; }
 .cbo-library-transfer { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
 .cbo-library-transfer .cbo-manager-heading { flex: 1 1 100%; }
