@@ -975,14 +975,9 @@ function renderOutputTemplateSettings() {
   });
 }
 
-// 若 ComfyUI 给插入的元素套了包裹层，视觉上的圆角框就不是 topbar 自身，
-// 上溯到顶栏的直接子元素才能拿到真正的左边缘。
+// 按钮组的父级带 mx-2，比操作栏内缩 8px；对齐要以操作栏外边缘为准。
 function topbarBox() {
-  const menu = topbarContainer();
-  if (!menu || !menu.contains(topbar)) return topbar;
-  let node = topbar;
-  while (node.parentElement !== menu) node = node.parentElement;
-  return node;
+  return topbar.closest(".actionbar-container") || topbar;
 }
 
 function positionPanel() {
