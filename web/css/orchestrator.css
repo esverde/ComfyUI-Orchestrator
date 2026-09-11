@@ -54,7 +54,7 @@
 #cbo-panel {
   position: fixed;
   z-index: 10000;
-  width: 370px;
+  width: min(460px, calc(100vw - 24px));
   overflow: hidden;
   color: var(--cbo-fg);
   background: var(--cbo-bg);

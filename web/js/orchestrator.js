@@ -985,7 +985,7 @@ function renderOutputTemplateSettings() {
 function positionPanel() {
   if (!panel || panel.hidden || !topbar) return;
   const anchor = topbar.getBoundingClientRect();
-  const width = panel.offsetWidth || 370;
+  const width = panel.offsetWidth;
   const left = Math.min(Math.max(8, anchor.left), Math.max(8, window.innerWidth - width - 8));
   panel.style.left = `${Math.round(left)}px`;
   panel.style.top = `${Math.round(anchor.bottom + 6)}px`;
