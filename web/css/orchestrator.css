@@ -26,14 +26,17 @@
   color: var(--cbo-fg);
 }
 
+/* 挂不进顶栏时的退路：压在画布上方，不会被真顶栏遮住 */
 #cbo-topbar.cbo-topbar-detached {
   position: fixed;
   z-index: 10000;
-  top: 8px;
+  top: 64px;
   right: 16px;
+  padding: 4px 6px;
   background: var(--cbo-bg);
   border: 1px solid var(--cbo-border);
   border-radius: 6px;
+  box-shadow: 0 6px 20px #0009;
 }
 
 .cbo-topbar-title { font-weight: 600; white-space: nowrap; }

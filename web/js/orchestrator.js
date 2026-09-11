@@ -1483,25 +1483,40 @@ function installStyles() {
 // Crystools 的监视器容器；找到它就插到它前面，顺序才符合预期。
 const CRYSTOOLS_SELECTOR = ".crystools-monitors-container, .crystools-root, #crystools-monitor-container";
 
-function mountTopbar(group) {
+// 新版前端会保留一个 display:none 的旧版 .comfyui-menu，光看 isConnected
+// 会把「插进了隐藏容器」误判成挂载成功，所以一律以实际可见为准。
+function isVisible(element) {
+  const rect = element.getBoundingClientRect();
+  return rect.width > 0 && rect.height > 0;
+}
+
+function topbarAnchors() {
   const crystools = document.querySelector(CRYSTOOLS_SELECTOR);
-  const beforeCrystools = crystools?.closest(".comfyui-button-group") || crystools;
-  if (beforeCrystools?.isConnected) {
-    beforeCrystools.before(group);
-    return true;
+  return [
+    crystools?.closest(".comfyui-button-group") || crystools,
+    app.menu?.settingsGroup?.element,
+    document.querySelector(".comfyui-menu-right"),
+  ].filter((element) => element?.isConnected);
+}
+
+function mountTopbar(group) {
+  for (const anchor of topbarAnchors()) {
+    anchor.before(group);
+    if (isVisible(group)) return true;
+    group.remove();
   }
-  // 官方设置按钮组是顶栏最右侧的稳定锚点，Crystools 也用它。
-  const settingsGroup = app.menu?.settingsGroup?.element;
-  if (settingsGroup?.isConnected) {
-    settingsGroup.before(group);
-    return true;
-  }
-  const menu = document.querySelector(".comfyui-menu-right, .comfyui-menu");
-  if (menu) {
+  for (const menu of document.querySelectorAll(".comfyui-menu-right, .comfyui-menu")) {
     menu.append(group);
-    return true;
+    if (isVisible(group)) return true;
+    group.remove();
   }
   return false;
+}
+
+function detachTopbar(group) {
+  group.classList.add("cbo-topbar-detached");
+  document.body.append(group);
+  console.warn("[Batch Orchestrator] 未能挂载到 ComfyUI 顶栏，已退回右上角悬浮显示。");
 }
 
 function buildTopbar() {
@@ -1516,19 +1531,22 @@ function buildTopbar() {
     <button id="cbo-toggle" type="button" aria-expanded="false" aria-controls="cbo-panel" aria-label="展开面板" title="展开面板">⌄</button>`;
 
   if (mountTopbar(topbar)) return;
-  // 顶栏还没渲染（Vue 前端异步挂载）就等一次，仍然失败则退回右上角悬浮。
+  // 顶栏是 Vue 异步挂载的，等它出现；超时就退回悬浮，绝不留下「哪都找不到」。
+  const watch = () => observer.observe(document.body, { childList: true, subtree: true });
   const observer = new MutationObserver(() => {
-    if (!mountTopbar(topbar)) return;
+    // 试挂载本身会改 DOM，不先断开会把自己的插入/移除又喂回来，空转到超时。
     observer.disconnect();
-    positionPanel();
-  });
-  observer.observe(document.body, { childList: true, subtree: true });
-  setTimeout(() => {
-    observer.disconnect();
-    if (!topbar.isConnected) {
-      topbar.classList.add("cbo-topbar-detached");
-      document.body.append(topbar);
+    if (mountTopbar(topbar)) {
+      clearTimeout(timer);
+      positionPanel();
+      return;
     }
+    watch();
+  });
+  watch();
+  const timer = setTimeout(() => {
+    observer.disconnect();
+    if (!topbar.isConnected || !isVisible(topbar)) detachTopbar(topbar);
   }, 5000);
 }
 
