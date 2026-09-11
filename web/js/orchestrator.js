@@ -800,16 +800,10 @@ function locateNode(id) {
     setStatus(`画布中找不到节点 #${id}`, "error");
     return;
   }
-  if (typeof canvas.deselectAll === "function") canvas.deselectAll();
-  if (typeof canvas.select === "function") canvas.select(node);
-  else if (typeof canvas.selectNode === "function") canvas.selectNode(node);
-  else {
-    node.selected = true;
-    if (canvas.selected_nodes) canvas.selected_nodes[node.id] = node;
-  }
-  if (typeof canvas.centerOnNode === "function") canvas.centerOnNode(node);
-  else if (typeof canvas.fitViewToSelectionAnimated === "function") canvas.fitViewToSelectionAnimated();
-  canvas.setDirty?.(true, true);
+  canvas.deselectAll();
+  canvas.select(node);
+  canvas.centerOnNode(node);
+  canvas.setDirty(true, true);
   setStatus(`已定位并高亮：${node.title || node.type || `节点 #${id}`}`, "ok");
 }
 
