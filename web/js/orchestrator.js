@@ -1052,7 +1052,7 @@ function saveSettingsFromForm() {
     }
     applyLoraVisibility();
     if (!oldLoraEnabled && state.settings.loraEnabled) {
-      refreshLoraSelect().then(updatePreview).catch((error) => setStatus(`读取 LoRA 列表失败：${error.message}`, "error"));
+      refreshLoraSelect().then(() => updatePreview()).catch((error) => setStatus(`读取 LoRA 列表失败：${error.message}`, "error"));
     }
     updateSettingsForm();
     updateSummary();
@@ -1077,7 +1077,7 @@ function setTargetControls() {
   fillSelect(byId("cbo-text-node"), state.targets.text);
 
   Promise.all([refreshModelSelect(), refreshLoraSelect()])
-    .then(updatePreview)
+    .then(() => updatePreview())
     .catch((error) => setStatus(`读取模型或 LoRA 列表失败：${error.message}`, "error"));
 
   outputContainer.replaceChildren();
@@ -1093,7 +1093,7 @@ function setTargetControls() {
     checkbox.type = "checkbox";
     checkbox.value = target.id;
     checkbox.checked = index === 0;
-    checkbox.addEventListener("change", updatePreview);
+    checkbox.addEventListener("change", () => updatePreview());
     const text = document.createElement("span");
     text.textContent = `${target.title} (#${target.id})`;
     label.append(checkbox, text);
@@ -1570,10 +1570,10 @@ function buildPanel() {
     updatePreview();
   });
   byId("cbo-unet-node").addEventListener("change", () => {
-    refreshModelSelect().then(updatePreview).catch((error) => setStatus(`读取模型列表失败：${error.message}`, "error"));
+    refreshModelSelect().then(() => updatePreview()).catch((error) => setStatus(`读取模型列表失败：${error.message}`, "error"));
   });
   byId("cbo-lora-node").addEventListener("change", () => {
-    refreshLoraSelect().then(updatePreview).catch((error) => setStatus(`读取 LoRA 列表失败：${error.message}`, "error"));
+    refreshLoraSelect().then(() => updatePreview()).catch((error) => setStatus(`读取 LoRA 列表失败：${error.message}`, "error"));
   });
   byId("cbo-unet-locate").addEventListener("click", () => locateNode(byId("cbo-unet-node").value));
   byId("cbo-lora-locate").addEventListener("click", () => locateNode(byId("cbo-lora-node").value));
@@ -1583,7 +1583,7 @@ function buildPanel() {
     updatePreview();
   });
   ["cbo-models", "cbo-loras"].forEach((id) => {
-    byId(id).addEventListener("change", updatePreview);
+    byId(id).addEventListener("change", () => updatePreview());
   });
   window.addEventListener("resize", positionPanel);
   document.addEventListener("pointerdown", (event) => {
