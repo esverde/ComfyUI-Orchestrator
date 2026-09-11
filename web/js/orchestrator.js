@@ -24,7 +24,7 @@ const DEFAULT_MAX_JOBS = 500;
 const DEFAULT_PREVIEW_LIMIT = 5;
 const MAX_PREVIEW_LIMIT = 50;
 const SETTINGS_STORAGE_KEY = "comfyui-batch-orchestrator.settings";
-const TASK_STATUS = { queued: "已入队", running: "执行中", done: "完成", failed: "失败" };
+const TASK_STATUS = { queued: "已入队", running: "执行中", done: "完成", failed: "失败", cancelled: "已取消" };
 
 function positiveInteger(value, fallback) {
   const number = Number(value);
@@ -44,6 +44,7 @@ function normalizeSettings(value = {}) {
     maxJobs: positiveInteger(source.maxJobs, DEFAULT_MAX_JOBS),
     previewLimit: Math.min(positiveInteger(source.previewLimit, DEFAULT_PREVIEW_LIMIT), MAX_PREVIEW_LIMIT),
     loraEnabled: source.loraEnabled !== false,
+    clearTasksOnSubmit: source.clearTasksOnSubmit === true,
     filenameTemplate,
     outputTemplates,
   };
@@ -71,6 +72,7 @@ const state = {
   prompt: null,
   targets: { unet: [], lora: [], text: [], outputs: [] },
   tasks: [],
+  batchSeq: 0,
   taskOrder: "desc",
   templateDirty: false,
   pollTimer: null,
@@ -532,6 +534,7 @@ function renderTemplates() {
   }
   for (const record of state.library.templates) {
     container.append(libraryRow(record.name, record.body, [
+      button("预览", (event) => event.currentTarget.closest(".cbo-library-record").classList.toggle("cbo-expanded")),
       button("加载", () => loadTemplate(record)),
       button("编辑", () => openTemplateEditor(record)),
       button("删除", () => removeTemplate(record.id), { className: "danger" }),
@@ -1002,11 +1005,13 @@ function updateSettingsForm() {
   const previewLimit = byId("cbo-setting-preview-limit");
   const filenameTemplate = byId("cbo-setting-filename-template");
   const loraEnabled = byId("cbo-setting-lora-enabled");
-  if (!maxJobs || !previewLimit || !filenameTemplate || !loraEnabled) return;
+  const clearTasks = byId("cbo-setting-clear-tasks");
+  if (!maxJobs || !previewLimit || !filenameTemplate || !loraEnabled || !clearTasks) return;
   maxJobs.value = String(state.settings.maxJobs);
   previewLimit.value = String(state.settings.previewLimit);
   filenameTemplate.value = state.settings.filenameTemplate;
   loraEnabled.checked = state.settings.loraEnabled;
+  clearTasks.checked = state.settings.clearTasksOnSubmit;
   renderOutputTemplateSettings();
 }
 
@@ -1027,6 +1032,7 @@ function saveSettingsFromForm() {
       maxJobs,
       previewLimit,
       loraEnabled: byId("cbo-setting-lora-enabled").checked,
+      clearTasksOnSubmit: byId("cbo-setting-clear-tasks").checked,
       filenameTemplate,
     });
     if (oldTemplate !== state.settings.filenameTemplate) {
@@ -1216,6 +1222,49 @@ async function refresh() {
   }
 }
 
+function batchLabel(batch) {
+  const tasks = state.tasks.filter((task) => task.batch === batch);
+  const time = new Date(tasks[0]?.submittedAt || Date.now()).toLocaleTimeString("zh-CN", { hour12: false });
+  const done = tasks.filter((task) => task.status === "done").length;
+  return `第 ${batch} 批 · ${time} · ${tasks.length} 个 · 完成 ${done}`;
+}
+
+function pendingTasks() {
+  return state.tasks.filter((task) => task.promptId && ["queued", "running"].includes(task.status));
+}
+
+function clearTasks() {
+  state.tasks = [];
+  state.batchSeq = 0;
+  renderTasks();
+}
+
+async function cancelPendingTasks() {
+  const pending = pendingTasks();
+  if (!pending.length) return;
+  if (!window.confirm(`确定取消 ${pending.length} 个未完成任务吗？`)) return;
+  try {
+    await api.fetchApi("/queue", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ delete: pending.map((task) => task.promptId) }),
+    });
+    // /interrupt 会中断当前执行的任何任务，先确认正在跑的确实是我们的，避免误杀。
+    const running = (await getJson("/queue"))?.queue_running?.[0]?.[1];
+    if (pending.some((task) => task.promptId === running)) {
+      await api.fetchApi("/interrupt", { method: "POST" });
+    }
+    for (const task of pending) {
+      task.status = "cancelled";
+      task.error = "已取消";
+    }
+    renderTasks();
+    setStatus(`已取消 ${pending.length} 个任务`, "ok");
+  } catch (error) {
+    setStatus(`取消失败：${error.message}`, "error");
+  }
+}
+
 function renderTasks() {
   const list = byId("cbo-tasks");
   list.replaceChildren();
@@ -1228,16 +1277,24 @@ function renderTasks() {
     orderButton.title = descending ? "当前最新任务在前，点击切换为最早任务在前" : "当前最早任务在前，点击切换为最新任务在前";
     orderButton.setAttribute("aria-label", orderButton.title);
   }
+  let lastBatch = null;
   for (const task of recent) {
+    if (task.batch !== lastBatch) {
+      lastBatch = task.batch;
+      const divider = document.createElement("div");
+      divider.className = "cbo-task-batch";
+      divider.textContent = batchLabel(task.batch);
+      list.append(divider);
+    }
     const row = document.createElement("div");
     const status = document.createElement("span");
     status.className = "cbo-task-status";
-    status.textContent = task.error ? "失败" : TASK_STATUS[task.status] || task.status;
+    status.textContent = TASK_STATUS[task.status] || task.status;
     if (task.error) status.title = task.error;
     const main = document.createElement("span");
     main.className = "cbo-task-main";
     main.textContent = task.filenamePrefixes.map((output) => output.prefix).join(" | ") || "未设置文件名";
-    main.title = main.textContent;
+    main.title = task.error || main.textContent;
     row.className = `cbo-task ${task.status}`;
     row.append(status, main);
     list.append(row);
@@ -1247,6 +1304,8 @@ function renderTasks() {
   byId("cbo-task-summary").textContent = state.tasks.length
     ? `已处理 ${state.tasks.length}；成功提交 ${submitted}；失败 ${failed}`
     : "尚未提交任务";
+  byId("cbo-task-clear").disabled = !state.tasks.length;
+  byId("cbo-task-cancel").disabled = !pendingTasks().length;
 }
 
 async function submitPrompt(prompt) {
@@ -1266,7 +1325,7 @@ async function submitPrompt(prompt) {
 }
 
 async function pollHistory() {
-  const pending = state.tasks.filter((task) => task.promptId && ["queued", "running"].includes(task.status));
+  const pending = pendingTasks();
   if (!pending.length) {
     if (state.pollTimer) clearInterval(state.pollTimer);
     state.pollTimer = null;
@@ -1303,11 +1362,18 @@ async function submit() {
     const iterator = expandJobs(state.prompt, config);
     const first = iterator.next();
     await recordTemplateUse(config.template);
+    if (state.settings.clearTasksOnSubmit) clearTasks();
+    byId("cbo-preview-box").open = false;
+    state.batchSeq += 1;
+    const batch = state.batchSeq;
+    const submittedAt = Date.now();
     let processed = 0;
     let failed = 0;
     for (let next = first; !next.done; next = iterator.next()) {
       const job = next.value;
       const task = {
+        batch,
+        submittedAt,
         index: job.index,
         model: job.model,
         lora: job.lora,
@@ -1406,15 +1472,16 @@ function buildPanel() {
       <div id="cbo-variable-slots" class="cbo-variable-slots"></div>
       <div id="cbo-variable-summary" class="cbo-variable-summary"></div>
       <fieldset><legend>输出文件名<button id="cbo-filename-help" type="button" class="cbo-help" aria-label="文件名可用变量说明" title="可用变量说明">?</button></legend><div id="cbo-output-nodes" class="cbo-output-nodes"></div></fieldset>
-      <pre id="cbo-preview" class="cbo-preview">填好参数后点击“生成预览”；预览数量可在设置中调整，不会提交任务。</pre>
+      <details id="cbo-preview-box" class="cbo-preview-box" open><summary>预览</summary><pre id="cbo-preview" class="cbo-preview">填好参数后点击“生成预览”；预览数量可在设置中调整，不会提交任务。</pre></details>
       <div class="cbo-actions"><button id="cbo-preview-button" class="cbo-btn" type="button">生成预览</button><button id="cbo-submit" class="cbo-btn primary" type="button">提交任务</button></div>
-      <div class="cbo-task-toolbar"><div id="cbo-task-summary" class="cbo-task-summary">尚未提交任务</div><button id="cbo-task-order" class="cbo-btn" type="button" aria-label="当前最新任务在前，点击切换为最早任务在前">新→旧</button></div>
+      <div class="cbo-task-toolbar"><div id="cbo-task-summary" class="cbo-task-summary">尚未提交任务</div><button id="cbo-task-cancel" class="cbo-btn" type="button" title="取消队列中尚未完成的任务" disabled>取消</button><button id="cbo-task-clear" class="cbo-btn" type="button" title="清空下方任务记录" disabled>清空</button><button id="cbo-task-order" class="cbo-btn" type="button" aria-label="当前最新任务在前，点击切换为最早任务在前">新→旧</button></div>
       <div id="cbo-tasks" class="cbo-tasks"></div>
     </div>
     <dialog id="cbo-settings-dialog" class="cbo-dialog" aria-labelledby="cbo-settings-title">
       <div class="cbo-dialog-header"><strong id="cbo-settings-title">设置</strong><span class="cbo-settings-hint">只保存在当前浏览器</span><form method="dialog"><button class="cbo-btn" aria-label="关闭设置">关闭</button></form></div>
       <section class="cbo-manager-section">
         <label class="cbo-check-row"><input id="cbo-setting-lora-enabled" type="checkbox"><span>启用 LoRA 维度（关闭后隐藏 LoRA 选择，不参与组合）</span></label>
+        <label class="cbo-check-row"><input id="cbo-setting-clear-tasks" type="checkbox"><span>提交新批次前清空任务记录</span></label>
         <label>最大任务数<input id="cbo-setting-max-jobs" type="number" min="1" step="1"></label>
         <label>预览任务数<input id="cbo-setting-preview-limit" type="number" min="1" max="50" step="1"></label>
         <label>默认保存图片模板<input id="cbo-setting-filename-template" type="text" spellcheck="false"></label>
@@ -1513,6 +1580,7 @@ function buildPanel() {
   byId("cbo-refresh").addEventListener("click", refresh);
   byId("cbo-submit").addEventListener("click", submit);
   byId("cbo-preview-button").addEventListener("click", () => {
+    byId("cbo-preview-box").open = true;
     const config = updatePreview(true);
     if (config) void recordTemplateUse(config.template);
   });
@@ -1525,6 +1593,8 @@ function buildPanel() {
   byId("cbo-template-clear").addEventListener("click", clearTemplateEditor);
   byId("cbo-library-export").addEventListener("click", exportLibrary);
   byId("cbo-library-import").addEventListener("change", importLibrary);
+  byId("cbo-task-clear").addEventListener("click", clearTasks);
+  byId("cbo-task-cancel").addEventListener("click", cancelPendingTasks);
   byId("cbo-task-order").addEventListener("click", () => {
     state.taskOrder = state.taskOrder === "desc" ? "asc" : "desc";
     renderTasks();

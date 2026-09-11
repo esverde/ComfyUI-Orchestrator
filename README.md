@@ -112,7 +112,7 @@ orchestrator/{{model}}_{{value}}_{{index}}
 orchestrator/{{model}}/{{value}}_{{index}}
 ```
 
-点击标题栏的 `设置` 可以修改最大任务数、预览任务数、面板模式和默认保存图片模板。设置只保存在当前浏览器的 `localStorage` 中，不会写入仓库；每个输出节点在主面板或设置面板中单独修改的模板也会被记住。
+点击顶栏的 `设置` 可以修改最大任务数、预览任务数、默认保存图片模板，以及是否启用 LoRA 维度、提交新批次前是否清空任务记录。设置只保存在当前浏览器的 `localStorage` 中，不会写入仓库；每个输出节点在主面板或设置面板中单独修改的模板也会被记住。
 
 ### 5. 预览和提交
 
@@ -233,6 +233,12 @@ node --check web/js/orchestrator-core.js
 node --check web/js/orchestrator-library.js
 node --check web/js/orchestrator.js
 ```
+
+## 任务监看
+
+提交后，任务记录按批次分组，每批之前有一条分割线标明批次号、提交时间、任务数和已完成数。记录框内可独立横向滚动查看完整文件名，不会带动面板其它部分。
+
+工具栏上的 `取消` 会把本次记录中尚未完成的任务从 ComfyUI 队列移除；只有当正在执行的任务确实属于本插件时才额外调用中断，避免误停其它来源的任务。`清空` 只清空面板上的记录，不影响已经在队列里的任务。
 
 ## 实现说明
 
@@ -362,7 +368,7 @@ Static `/` creates a relative subdirectory below ComfyUI's output directory:
 orchestrator/{{model}}/{{value}}_{{index}}
 ```
 
-Open `Settings` from the header to change the maximum job count, preview count, panel mode, and default output filename template. Settings are stored only in the current browser's `localStorage`, not in the repository; per-output template overrides made in either panel are remembered too.
+Open `Settings` from the topbar to change the maximum job count, preview count, default output filename template, whether the LoRA dimension is enabled, and whether the task log is cleared before each new batch. Settings are stored only in the current browser's `localStorage`, not in the repository; per-output template overrides made in either panel are remembered too.
 
 ### 5. Preview and submit
 
@@ -483,6 +489,12 @@ node --check web/js/orchestrator-core.js
 node --check web/js/orchestrator-library.js
 node --check web/js/orchestrator.js
 ```
+
+## Task monitoring
+
+After submission the task log is grouped by batch, with a divider before each batch showing its number, submission time, task count, and completed count. The log scrolls horizontally on its own so long filenames can be read without moving the rest of the panel.
+
+`Cancel` in the toolbar removes this log's unfinished tasks from the ComfyUI queue. It only calls interrupt when the currently executing job actually belongs to this extension, so jobs from other sources are never stopped. `Clear` only empties the on-screen log and does not touch anything already queued.
 
 ## Implementation notes
 
