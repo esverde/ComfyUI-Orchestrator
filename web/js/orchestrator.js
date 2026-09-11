@@ -111,7 +111,7 @@ function button(text, onClick, { className = "", title = "", ariaLabel = "" } = 
   const element = document.createElement("button");
   element.type = "button";
   element.textContent = text;
-  if (className) element.className = className;
+  element.className = ["cbo-btn", className].filter(Boolean).join(" ");
   if (title) element.title = title;
   if (ariaLabel) element.setAttribute("aria-label", ariaLabel);
   element.addEventListener("click", onClick);
@@ -1392,26 +1392,26 @@ function buildPanel() {
   element.innerHTML = `
     <div class="cbo-body">
       <div id="cbo-summary" class="cbo-summary">尚未读取画布</div>
-      <label>UNET 加载器<div class="cbo-node-control"><select id="cbo-unet-node"></select><button id="cbo-unet-locate" class="cbo-locate" type="button" aria-label="定位 UNET 加载器">定位</button></div></label>
+      <label>UNET 加载器<div class="cbo-node-control"><select id="cbo-unet-node"></select><button id="cbo-unet-locate" class="cbo-btn cbo-locate" type="button" aria-label="定位 UNET 加载器">定位</button></div></label>
       <label>模型（可多选）<div id="cbo-models" class="cbo-tree" aria-label="模型列表"></div></label>
       <div id="cbo-lora-section">
-        <label>LoRA 加载器<div class="cbo-node-control"><select id="cbo-lora-node"></select><button id="cbo-lora-locate" class="cbo-locate" type="button" aria-label="定位 LoRA 加载器">定位</button></div></label>
+        <label>LoRA 加载器<div class="cbo-node-control"><select id="cbo-lora-node"></select><button id="cbo-lora-locate" class="cbo-btn cbo-locate" type="button" aria-label="定位 LoRA 加载器">定位</button></div></label>
         <label>LoRA（可多选）<div id="cbo-loras" class="cbo-tree" aria-label="LoRA 列表"></div></label>
       </div>
-      <label>CLIP 文本节点<div class="cbo-node-control"><select id="cbo-text-node"></select><button id="cbo-text-locate" class="cbo-locate" type="button" aria-label="定位 CLIP 文本节点">定位</button></div></label>
-      <div class="cbo-section-heading"><span>文本模板</span><button id="cbo-template-manager-open" type="button">模板库</button></div>
+      <label>CLIP 文本节点<div class="cbo-node-control"><select id="cbo-text-node"></select><button id="cbo-text-locate" class="cbo-btn cbo-locate" type="button" aria-label="定位 CLIP 文本节点">定位</button></div></label>
+      <div class="cbo-section-heading"><span>文本模板</span><button id="cbo-template-manager-open" class="cbo-btn" type="button">模板库</button></div>
       <textarea id="cbo-template" rows="5" placeholder="使用 {{subject}} 作为变量" aria-label="文本模板"></textarea>
-      <div class="cbo-section-heading"><span>变量</span><button id="cbo-variable-slot-add" type="button">+ 添加变量</button><button id="cbo-variable-set-save" type="button">保存组合</button><button id="cbo-variable-manager-open" type="button">变量库</button></div>
+      <div class="cbo-section-heading"><span>变量</span><button id="cbo-variable-slot-add" class="cbo-btn" type="button">+ 添加变量</button><button id="cbo-variable-set-save" class="cbo-btn" type="button">保存组合</button><button id="cbo-variable-manager-open" class="cbo-btn" type="button">变量库</button></div>
       <div id="cbo-variable-slots" class="cbo-variable-slots"></div>
       <div id="cbo-variable-summary" class="cbo-variable-summary"></div>
       <fieldset><legend>输出文件名<button id="cbo-filename-help" type="button" class="cbo-help" aria-label="文件名可用变量说明" title="可用变量说明">?</button></legend><div id="cbo-output-nodes" class="cbo-output-nodes"></div></fieldset>
       <pre id="cbo-preview" class="cbo-preview">填好参数后点击“生成预览”；预览数量可在设置中调整，不会提交任务。</pre>
-      <div class="cbo-actions"><button id="cbo-preview-button" type="button">生成预览</button><button id="cbo-submit" class="primary" type="button">提交任务</button></div>
-      <div class="cbo-task-toolbar"><div id="cbo-task-summary" class="cbo-task-summary">尚未提交任务</div><button id="cbo-task-order" type="button" aria-label="当前最新任务在前，点击切换为最早任务在前">新→旧</button></div>
+      <div class="cbo-actions"><button id="cbo-preview-button" class="cbo-btn" type="button">生成预览</button><button id="cbo-submit" class="cbo-btn primary" type="button">提交任务</button></div>
+      <div class="cbo-task-toolbar"><div id="cbo-task-summary" class="cbo-task-summary">尚未提交任务</div><button id="cbo-task-order" class="cbo-btn" type="button" aria-label="当前最新任务在前，点击切换为最早任务在前">新→旧</button></div>
       <div id="cbo-tasks" class="cbo-tasks"></div>
     </div>
     <dialog id="cbo-settings-dialog" class="cbo-dialog" aria-labelledby="cbo-settings-title">
-      <div class="cbo-dialog-header"><strong id="cbo-settings-title">设置</strong><span class="cbo-settings-hint">只保存在当前浏览器</span><form method="dialog"><button aria-label="关闭设置">关闭</button></form></div>
+      <div class="cbo-dialog-header"><strong id="cbo-settings-title">设置</strong><span class="cbo-settings-hint">只保存在当前浏览器</span><form method="dialog"><button class="cbo-btn" aria-label="关闭设置">关闭</button></form></div>
       <section class="cbo-manager-section">
         <label class="cbo-check-row"><input id="cbo-setting-lora-enabled" type="checkbox"><span>启用 LoRA 维度（关闭后隐藏 LoRA 选择，不参与组合）</span></label>
         <label>最大任务数<input id="cbo-setting-max-jobs" type="number" min="1" step="1"></label>
@@ -1423,12 +1423,12 @@ function buildPanel() {
       <section class="cbo-manager-section cbo-library-transfer">
         <div class="cbo-manager-heading"><strong>迁移</strong><span>导出 JSON 后可在其他浏览器或 ComfyUI 安装导入</span></div>
         <input id="cbo-library-import" type="file" accept="application/json,.json">
-        <button id="cbo-library-export" type="button">导出变量库 JSON</button>
+        <button id="cbo-library-export" class="cbo-btn" type="button">导出变量库 JSON</button>
       </section>
-      <div class="cbo-settings-actions"><button id="cbo-save-settings" class="primary" type="button">保存设置</button></div>
+      <div class="cbo-settings-actions"><button id="cbo-save-settings" class="cbo-btn primary" type="button">保存设置</button></div>
     </dialog>
     <dialog id="cbo-variable-manager" class="cbo-dialog" aria-labelledby="cbo-variable-manager-title">
-      <div class="cbo-dialog-header"><strong id="cbo-variable-manager-title">变量库</strong><form method="dialog"><button aria-label="关闭变量库">关闭</button></form></div>
+      <div class="cbo-dialog-header"><strong id="cbo-variable-manager-title">变量库</strong><form method="dialog"><button class="cbo-btn" aria-label="关闭变量库">关闭</button></form></div>
       <section class="cbo-manager-section">
         <div class="cbo-manager-heading"><strong>已保存的组合</strong><span>载入后会替换主面板上的全部变量</span></div>
         <div id="cbo-variable-sets" class="cbo-library-records"></div>
@@ -1443,12 +1443,12 @@ function buildPanel() {
           <input id="cbo-library-label" type="text" placeholder="文件名 label（可选）" spellcheck="false">
           <input id="cbo-library-tags" type="text" placeholder="标签，用逗号分隔">
           <input id="cbo-library-note" type="text" placeholder="备注（可选）">
-          <div class="cbo-manager-actions"><button id="cbo-library-save" class="primary" type="button">添加变量值</button><button id="cbo-library-cancel" type="button">清空编辑</button></div>
+          <div class="cbo-manager-actions"><button id="cbo-library-save" class="cbo-btn primary" type="button">添加变量值</button><button id="cbo-library-cancel" class="cbo-btn" type="button">清空编辑</button></div>
         </div>
       </section>
     </dialog>
     <dialog id="cbo-help-dialog" class="cbo-dialog" aria-labelledby="cbo-help-title">
-      <div class="cbo-dialog-header"><strong id="cbo-help-title">文件名可用变量</strong><form method="dialog"><button aria-label="关闭说明">关闭</button></form></div>
+      <div class="cbo-dialog-header"><strong id="cbo-help-title">文件名可用变量</strong><form method="dialog"><button class="cbo-btn" aria-label="关闭说明">关闭</button></form></div>
       <section class="cbo-manager-section">
         <dl class="cbo-help-list">
           <dt>{{model}}</dt><dd>UNET 模型名，自动去掉目录和扩展名</dd>
@@ -1466,12 +1466,12 @@ function buildPanel() {
       </section>
     </dialog>
     <dialog id="cbo-template-manager" class="cbo-dialog" aria-labelledby="cbo-template-manager-title">
-      <div class="cbo-dialog-header"><strong id="cbo-template-manager-title">模板库</strong><form method="dialog"><button aria-label="关闭模板库">关闭</button></form></div>
+      <div class="cbo-dialog-header"><strong id="cbo-template-manager-title">模板库</strong><form method="dialog"><button class="cbo-btn" aria-label="关闭模板库">关闭</button></form></div>
       <section class="cbo-manager-section">
         <div class="cbo-manager-heading"><strong>保存当前模板</strong><span>保存的是主面板文本框里的内容</span></div>
         <input id="cbo-template-record-id" type="hidden">
         <div class="cbo-manager-filter"><label>模板名称<input id="cbo-template-name" type="text" placeholder="如：服装组合"></label><label>标签<input id="cbo-template-tags" type="text" placeholder="标签，用逗号分隔"></label></div>
-        <div class="cbo-manager-actions"><button id="cbo-template-save" class="primary" type="button">保存当前模板</button><button id="cbo-template-clear" type="button">清空模板编辑</button></div>
+        <div class="cbo-manager-actions"><button id="cbo-template-save" class="cbo-btn primary" type="button">保存当前模板</button><button id="cbo-template-clear" class="cbo-btn" type="button">清空模板编辑</button></div>
       </section>
       <section class="cbo-manager-section">
         <div class="cbo-manager-heading"><strong>已保存模板</strong></div>

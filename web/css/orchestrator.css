@@ -66,21 +66,22 @@
 
 .cbo-actions { display: flex; gap: 6px; }
 
-.cbo-actions button {
-  padding: 5px 8px;
+.cbo-actions .cbo-btn { padding: 5px 8px; }
+.cbo-actions .primary,
+.cbo-settings-actions .primary { flex: 1; background: var(--cbo-accent); border-color: var(--cbo-border); }
+
+/* 各处按钮共用同一套外观，差异只在内边距与圆角 */
+.cbo-btn {
+  padding: 4px 7px;
   color: var(--cbo-fg);
   background: var(--cbo-input-bg);
   border: 1px solid var(--cbo-border);
   border-radius: 4px;
   cursor: pointer;
+  font: inherit;
 }
-
-.cbo-actions button:hover,
-.cbo-settings-actions button:hover { background: var(--cbo-hover); color: var(--cbo-hover-fg); }
-.cbo-actions button:disabled,
-.cbo-settings-actions button:disabled { cursor: wait; opacity: .55; }
-.cbo-actions .primary,
-.cbo-settings-actions .primary { flex: 1; background: var(--cbo-accent); border-color: var(--cbo-border); }
+.cbo-btn:hover { background: var(--cbo-hover); color: var(--cbo-hover-fg); }
+.cbo-btn:disabled { cursor: wait; opacity: .55; }
 
 .cbo-body {
   overflow: auto;
@@ -133,6 +134,9 @@
 .cbo-tree-row { display: flex; align-items: center; gap: 4px; min-height: 25px; }
 .cbo-tree-children { margin-left: 18px; }
 .cbo-tree-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   flex: 0 0 18px;
   width: 18px;
   height: 20px;
@@ -146,7 +150,6 @@
 }
 .cbo-tree-toggle:hover,
 .cbo-tree-toggle:focus-visible { color: var(--cbo-fg); background: var(--cbo-hover); }
-.cbo-tree-toggle { display: flex; align-items: center; justify-content: center; }
 .cbo-tree-toggle .cbo-chevron { transform: rotate(-90deg); }
 .cbo-tree-toggle.cbo-open .cbo-chevron { transform: none; }
 .cbo-tree-spacer { flex: 0 0 18px; width: 18px; }
@@ -169,30 +172,24 @@
 .cbo-node-control .cbo-locate { margin-top: 3px; padding: 5px 7px; }
 .cbo-section-heading { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; color: var(--cbo-fg); }
 .cbo-section-heading > span:first-child { flex: 1; }
-.cbo-section-heading button { flex: 0 0 auto; padding: 4px 7px; color: var(--cbo-fg); background: var(--cbo-input-bg); border: 1px solid var(--cbo-border); border-radius: 4px; cursor: pointer; font: inherit; }
-.cbo-section-heading button:hover { background: var(--cbo-hover); color: var(--cbo-hover-fg); }
+.cbo-section-heading .cbo-btn { flex: 0 0 auto; }
 
 .cbo-settings-actions {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 6px;
+  margin-top: 10px;
 }
+.cbo-settings-actions .cbo-btn { padding: 5px 7px; }
 .cbo-settings-hint { color: var(--cbo-muted); font-size: 11px; }
 .cbo-settings-subheading { margin: 10px 0 5px; color: var(--cbo-fg); font-size: 11px; font-weight: 600; }
 .cbo-setting-output-row { margin-bottom: 6px !important; }
-.cbo-settings-actions { justify-content: flex-end; margin-top: 10px; }
-.cbo-settings-actions button { padding: 5px 7px; color: var(--cbo-fg); background: var(--cbo-input-bg); border: 1px solid var(--cbo-border); border-radius: 4px; cursor: pointer; }
+.cbo-summary { margin-bottom: 8px; }
 .cbo-summary,
-.cbo-task-summary {
-  margin-bottom: 8px;
-  color: var(--cbo-muted);
-  font-size: 11px;
-}
-.cbo-task-summary { margin: 0; }
+.cbo-task-summary { color: var(--cbo-muted); font-size: 11px; }
 .cbo-task-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin: 10px 0 6px; }
-.cbo-task-toolbar button { flex: 0 0 auto; padding: 3px 6px; color: var(--cbo-fg); background: var(--cbo-input-bg); border: 1px solid var(--cbo-border); border-radius: 3px; cursor: pointer; font-size: 11px; }
-.cbo-task-toolbar button:hover { background: var(--cbo-hover); color: var(--cbo-hover-fg); }
+.cbo-task-toolbar .cbo-btn { flex: 0 0 auto; padding: 3px 6px; border-radius: 3px; font-size: 11px; }
 
 .cbo-body fieldset {
   margin: 10px 0;
@@ -207,8 +204,7 @@
 .cbo-output-header { display: flex; align-items: center; justify-content: space-between; gap: 5px; }
 .cbo-check-row { display: flex !important; align-items: center; gap: 6px; margin: 3px 0 !important; }
 .cbo-check-row input { width: auto; margin: 0; }
-.cbo-locate { flex: 0 0 auto; padding: 2px 6px; color: var(--cbo-fg); background: var(--cbo-secondary-bg); border: 1px solid var(--cbo-border); border-radius: 3px; cursor: pointer; font-size: 11px; }
-.cbo-locate:hover { background: var(--cbo-hover); color: var(--cbo-hover-fg); }
+.cbo-locate { flex: 0 0 auto; padding: 2px 6px; background: var(--cbo-secondary-bg); border-radius: 3px; font-size: 11px; }
 .cbo-output-template { margin-top: 5px !important; }
 
 .cbo-preview {
@@ -257,29 +253,15 @@
 .cbo-dialog-header { padding: 9px 11px; background: var(--cbo-header-bg); border-bottom: 1px solid var(--cbo-border); }
 /* 关闭按钮外的 form 只为 method="dialog"，不该占据布局 */
 .cbo-dialog-header form { display: contents; }
-.cbo-dialog-header button,
-.cbo-manager-actions button,
-.cbo-library-transfer button,
-.cbo-library-record-actions button,
-.cbo-library-history-row button,
-.cbo-variable-slot-header button { padding: 4px 7px; color: var(--cbo-fg); background: var(--cbo-input-bg); border: 1px solid var(--cbo-border); border-radius: 4px; cursor: pointer; font: inherit; }
-.cbo-dialog-header button:hover,
-.cbo-manager-actions button:hover,
-.cbo-library-transfer button:hover,
-.cbo-library-record-actions button:hover,
-.cbo-library-history-row button:hover,
-.cbo-variable-slot-header button:hover { background: var(--cbo-hover); color: var(--cbo-hover-fg); }
 .cbo-manager-section { padding: 10px 11px; border-bottom: 1px solid var(--cbo-border); }
 .cbo-manager-section:last-child { border-bottom: 0; }
 .cbo-manager-heading { margin-bottom: 7px; }
 .cbo-manager-heading span { color: var(--cbo-muted); font-size: 11px; }
 .cbo-manager-filter { display: grid; grid-template-columns: 1fr 180px; gap: 7px; margin-bottom: 7px; }
+.cbo-dialog select,
 .cbo-dialog input:not([type="hidden"]):not([type="checkbox"]) { box-sizing: border-box; width: 100%; margin-top: 3px; padding: 5px 6px; color: var(--cbo-input-fg); background: var(--cbo-input-bg); border: 1px solid var(--cbo-border); border-radius: 4px; font: inherit; }
 .cbo-dialog input:focus,
 .cbo-dialog select:focus { outline: 1px solid var(--cbo-focus); border-color: var(--cbo-focus); }
-.cbo-dialog select { box-sizing: border-box; width: 100%; margin-top: 3px; padding: 5px 6px; color: var(--cbo-input-fg); background: var(--cbo-input-bg); border: 1px solid var(--cbo-border); border-radius: 4px; font: inherit; }
-.cbo-dialog .cbo-check-row input { width: auto; margin: 0; }
-.cbo-dialog .cbo-check-row span { color: var(--cbo-fg); }
 .cbo-variable-slots { display: grid; gap: 7px; margin-bottom: 6px; }
 .cbo-variable-slot { padding: 7px; background: var(--cbo-secondary-bg); border: 1px solid var(--cbo-border); border-radius: 5px; }
 .cbo-variable-slot-header { margin-bottom: 6px; }
