@@ -119,11 +119,9 @@
   border-color: var(--cbo-focus);
 }
 
-.cbo-body select[multiple] { min-height: 112px; }
 .cbo-body textarea { resize: vertical; }
 #cbo-template { field-sizing: content; min-height: 76px; max-height: 320px; }
 .cbo-tree {
-  min-height: 112px;
   max-height: 240px;
   overflow: auto;
   padding: 4px;

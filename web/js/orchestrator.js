@@ -1460,10 +1460,10 @@ function buildPanel() {
     <div class="cbo-body">
       <div id="cbo-summary" class="cbo-summary">尚未读取画布</div>
       <label>UNET 加载器<div class="cbo-node-control"><select id="cbo-unet-node"></select><button id="cbo-unet-locate" class="cbo-btn cbo-locate" type="button" aria-label="定位 UNET 加载器">定位</button></div></label>
-      <label>模型（可多选）<div id="cbo-models" class="cbo-tree" aria-label="模型列表"></div></label>
+      <label>模型<div id="cbo-models" class="cbo-tree" aria-label="模型列表"></div></label>
       <div id="cbo-lora-section">
         <label>LoRA 加载器<div class="cbo-node-control"><select id="cbo-lora-node"></select><button id="cbo-lora-locate" class="cbo-btn cbo-locate" type="button" aria-label="定位 LoRA 加载器">定位</button></div></label>
-        <label>LoRA（可多选）<div id="cbo-loras" class="cbo-tree" aria-label="LoRA 列表"></div></label>
+        <label>LoRA<div id="cbo-loras" class="cbo-tree" aria-label="LoRA 列表"></div></label>
       </div>
       <label>CLIP 文本节点<div class="cbo-node-control"><select id="cbo-text-node"></select><button id="cbo-text-locate" class="cbo-btn cbo-locate" type="button" aria-label="定位 CLIP 文本节点">定位</button></div></label>
       <div class="cbo-section-heading"><span>文本模板</span><button id="cbo-template-manager-open" class="cbo-btn" type="button">模板库</button></div>
