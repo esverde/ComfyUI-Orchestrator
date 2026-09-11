@@ -1344,7 +1344,7 @@ function renderTasks() {
   const failed = failedTasks().length;
   const submitted = state.tasks.length - failed;
   byId("cbo-task-summary").textContent = state.tasks.length
-    ? `已处理 ${state.tasks.length}；成功提交 ${submitted}；失败 ${failed}`
+    ? `共 ${state.tasks.length} · 成功 ${submitted} · 失败 ${failed}`
     : "尚未提交任务";
   byId("cbo-task-clear").disabled = !state.tasks.length;
   byId("cbo-task-cancel").disabled = !pendingTasks().length;

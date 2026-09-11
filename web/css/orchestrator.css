@@ -14,6 +14,7 @@
   --cbo-accent: var(--content-bg, #256eaa);
   --cbo-focus: var(--content-hover-bg, #55a9e6);
   --cbo-success: var(--success-text, #7ddf9a);
+  --cbo-running: #4ea1ff;
   font: 13px/1.35 system-ui, sans-serif;
 }
 
@@ -187,7 +188,8 @@
 .cbo-summary { margin-bottom: 8px; }
 .cbo-summary,
 .cbo-task-summary { color: var(--cbo-muted); font-size: 11px; }
-.cbo-task-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin: 10px 0 6px; }
+.cbo-task-toolbar { display: flex; align-items: center; flex-wrap: wrap; justify-content: space-between; gap: 6px; margin: 10px 0 6px; }
+.cbo-task-summary { flex: 1 1 auto; min-width: 0; }
 .cbo-task-toolbar .cbo-btn { flex: 0 0 auto; padding: 3px 6px; border-radius: 3px; font-size: 11px; }
 
 .cbo-body fieldset {
@@ -250,8 +252,8 @@
 .cbo-task.done .cbo-task-status { color: var(--cbo-success); }
 .cbo-task.failed .cbo-task-status { color: var(--error-text, #ff8989); }
 .cbo-task.cancelled { opacity: .6; }
-.cbo-task.running { background: var(--cbo-hover); }
-.cbo-task.running .cbo-task-status { color: var(--cbo-focus); }
+.cbo-task.running { background: var(--cbo-hover); box-shadow: inset 2px 0 0 var(--cbo-running); }
+.cbo-task.running .cbo-task-status { color: var(--cbo-running); }
 
 .cbo-variable-summary { margin: -3px 0 8px; color: var(--cbo-muted); font-size: 11px; }
 .cbo-dialog-header,
