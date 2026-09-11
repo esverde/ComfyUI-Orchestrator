@@ -186,7 +186,7 @@ tags 只用于变量库搜索和筛选，不会自动拼入文件名。
 
 主面板上的 `变量库` 和 `模板库` 是两个独立弹窗。
 
-`变量库` 管理已保存的组合与单个变量值：支持按变量名、文本、label、备注搜索，按 tag 精确筛选，编辑或删除记录。`模板库` 管理命名模板和最近使用历史，每条模板可以就地 `预览` 完整内容、`加载` 到主面板、`编辑` 或删除。模板历史最多保留 100 条，按模板正文去重。
+`变量库` 管理已保存的组合与单个变量值：支持按变量名、文本、label、备注搜索，按 tag 精确筛选，编辑或删除记录。`模板库` 管理命名模板和最近使用历史，每条模板可以就地 `预览` 完整内容、`加载` 到主面板、`编辑` 或删除。最近使用的每条记录可以 `预览`、`加载`，或用 `存为模板` 直接命名存入已保存模板——历史是自动记录的日志，不支持就地编辑，提升为正式模板后再走常规编辑路径。模板历史最多保留 100 条，按模板正文去重。
 
 变量库、组合、模板和历史保存在当前浏览器的 IndexedDB 数据库 `comfyui-batch-orchestrator-library`；面板设置和输出节点模板保存在当前浏览器的 `localStorage`。IndexedDB 不可用时仍可正常配置并提交批次，但变量库 CRUD、历史和迁移不可用。
 
@@ -455,7 +455,7 @@ Tags are used for library search and filtering; they are not automatically emitt
 
 `Variable library` and `Template library` are two separate dialogs opened from the panel.
 
-`Variable library` manages saved combinations and individual variable values: search across names, text, labels, and notes, exact tag filtering, and edit/delete. `Template library` manages named templates and recent history; each template can be previewed in place, loaded into the panel, edited, or deleted. History is capped at 100 entries and deduplicated by template body.
+`Variable library` manages saved combinations and individual variable values: search across names, text, labels, and notes, exact tag filtering, and edit/delete. `Template library` manages named templates and recent history; each template can be previewed in place, loaded into the panel, edited, or deleted. Each history entry can be previewed, loaded, or promoted with `Save as template`, which names it and stores it among the saved templates — history is an automatic log and is not edited in place; promote it first and then edit it the usual way. History is capped at 100 entries and deduplicated by template body.
 
 Variables, combinations, templates, and history are stored in the current browser's IndexedDB database, `comfyui-batch-orchestrator-library`. Panel settings and output-template overrides remain in the current browser's `localStorage`. If IndexedDB is unavailable you can still configure and submit batches; only library CRUD, history, and migration are unavailable.
 

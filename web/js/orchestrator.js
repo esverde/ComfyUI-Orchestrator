@@ -558,6 +558,7 @@ function renderTemplateHistory() {
   for (const record of state.library.templateHistory) {
     container.append(libraryRow(record.name, record.body, [
       previewButton(),
+      button("存为模板", () => promoteHistory(record)),
       button("加载", () => loadTemplate(record)),
     ]));
   }
@@ -593,6 +594,25 @@ function clearTemplateEditor() {
   byId("cbo-template-tags").value = "";
 }
 
+async function storeTemplate(name, body, tags, existing) {
+  const now = Date.now();
+  const normalized = normalizeLibraryData({ templates: [{
+    id: existing?.id,
+    name,
+    body,
+    tags,
+    createdAt: existing?.createdAt || now,
+    updatedAt: now,
+    lastUsedAt: existing?.lastUsedAt || 0,
+  }] }, now).templates[0];
+  await putLibraryRecord("templates", normalized);
+  const templates = existing
+    ? state.library.templates.map((record) => record.id === normalized.id ? normalized : record)
+    : [...state.library.templates, normalized];
+  state.library = { ...state.library, templates };
+  renderTemplateRecords();
+}
+
 async function saveCurrentTemplate() {
   try {
     if (!state.library.ready) throw new Error("变量库不可用，无法保存模板");
@@ -602,24 +622,25 @@ async function saveCurrentTemplate() {
     if (!body.trim()) throw new Error("模板内容不能为空");
     const existing = state.library.templates.find((record) => record.id === state.templateEditorId)
       || state.library.templates.find((record) => record.name === name);
-    const now = Date.now();
-    const normalized = normalizeLibraryData({ templates: [{
-      id: existing?.id,
-      name,
-      body,
-      tags: byId("cbo-template-tags").value,
-      createdAt: existing?.createdAt || now,
-      updatedAt: now,
-      lastUsedAt: existing?.lastUsedAt || 0,
-    }] }, now).templates[0];
-    await putLibraryRecord("templates", normalized);
-    const templates = existing
-      ? state.library.templates.map((record) => record.id === normalized.id ? normalized : record)
-      : [...state.library.templates, normalized];
-    state.library = { ...state.library, templates };
+    await storeTemplate(name, body, byId("cbo-template-tags").value, existing);
     clearTemplateEditor();
-    renderTemplateRecords();
     setStatus("模板已保存", "ok");
+  } catch (error) {
+    setStatus(error.message, "error");
+  }
+}
+
+// 历史是自动记录的日志，不该就地编辑；提升为正式模板后再走常规编辑路径。
+async function promoteHistory(record) {
+  try {
+    if (!state.library.ready) throw new Error("变量库不可用，无法保存模板");
+    const input = window.prompt("模板名称", record.name === "最近使用" ? "" : record.name);
+    if (input === null) return;
+    const name = input.trim();
+    if (!name) throw new Error("模板名称不能为空");
+    const existing = state.library.templates.find((item) => item.name === name);
+    await storeTemplate(name, record.body, "", existing);
+    setStatus(`已存为模板：${name}`, "ok");
   } catch (error) {
     setStatus(error.message, "error");
   }
