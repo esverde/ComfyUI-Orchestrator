@@ -49,6 +49,7 @@ function normalizeSettings(value = {}) {
     previewLimit: positiveInteger(source.previewLimit, DEFAULT_PREVIEW_LIMIT, MAX_PREVIEW_LIMIT),
     panelMode: source.panelMode === "floating" ? "floating" : "fixed",
     position: normalizePosition(source.position),
+    loraEnabled: source.loraEnabled !== false,
     filenameTemplate,
     outputTemplates,
   };
@@ -81,7 +82,7 @@ const state = {
   pollTimer: null,
   settings: loadSettings(),
   library: { ...normalizeLibraryData(), ready: false },
-  variableSlots: [],
+  variableSlots: [{ key: "subject", values: [] }],
   variableEditorId: "",
 };
 
@@ -108,6 +109,7 @@ function setFieldMessage(message, kind = "") {
 function librarySnapshot() {
   return {
     variables: state.library.variables,
+    variableSets: state.library.variableSets,
     templates: state.library.templates,
     templateHistory: state.library.templateHistory,
   };
@@ -117,36 +119,8 @@ function cloneVariableRecord(record) {
   return { ...record, tags: [...(record.tags || [])] };
 }
 
-function sameVariableValue(left, right) {
-  if (left.id && right.id) return left.id === right.id;
-  return left.key === right.key && left.text === right.text && left.label === right.label;
-}
-
-function variableLinesFromQuickInput() {
-  return byId("cbo-values")?.value
-    .split(/\r?\n/)
-    .map((value) => value.trim())
-    .filter(Boolean) || [];
-}
-
 function variableDimensions(config) {
-  return Array.isArray(config.variables) && config.variables.length
-    ? config.variables.map((slot) => slot.values || [])
-    : [config.values || []];
-}
-
-function updateVariableSummary() {
-  const summary = byId("cbo-variable-summary");
-  if (!summary) return;
-  if (!state.variableSlots.length) {
-    summary.textContent = "组合变量未启用；当前使用下方快速输入。";
-    return;
-  }
-  const counts = state.variableSlots.map((slot) => `${slot.key || "未命名"}（${slot.values.length}）`);
-  const total = state.variableSlots.every((slot) => slot.values.length)
-    ? countJobs(...state.variableSlots.map((slot) => slot.values))
-    : 0;
-  summary.textContent = `组合变量：${counts.join(" × ")}；本次变量组合 ${total || "待补全"}`;
+  return (config.variables || []).map((slot) => slot.values || []);
 }
 
 function filteredVariableRecords() {
@@ -211,7 +185,7 @@ function renderVariableRecords() {
 
 function openVariableEditor(record = null) {
   state.variableEditorId = record?.id || "";
-  byId("cbo-library-key").value = record?.key || byId("cbo-variable")?.value.trim() || "subject";
+  byId("cbo-library-key").value = record?.key || state.variableSlots[0]?.key || "subject";
   byId("cbo-library-text").value = record?.text || "";
   byId("cbo-library-label").value = record?.label || "";
   byId("cbo-library-tags").value = record?.tags?.join(", ") || "";
@@ -248,8 +222,8 @@ async function saveVariableRecord() {
       : [...state.library.variables, normalized];
     state.library = { ...state.library, variables };
     clearVariableEditor();
-    renderVariableManager();
-    updateVariableSummary();
+    renderVariableRecords();
+    renderVariableSlots();
     setStatus("变量值已保存", "ok");
   } catch (error) {
     setStatus(error.message, "error");
@@ -264,41 +238,77 @@ async function removeVariableRecord(id) {
       ...state.library,
       variables: state.library.variables.filter((record) => record.id !== id),
     };
-    renderVariableManager();
+    renderVariableRecords();
+    renderVariableSlots();
     setStatus("变量值已删除", "ok");
   } catch (error) {
     setStatus(error.message, "error");
   }
 }
 
-function selectedSlotValue(slot, record) {
-  return slot.values.some((value) => sameVariableValue(value, record));
+function addSlotValue(slot, text) {
+  const value = String(text).trim();
+  if (!value) return false;
+  if (slot.values.some((item) => item.text === value)) return false;
+  // 同 key 同文本的库记录直接带上 label/tags，文件名模板的 {{key_label}} 才有内容。
+  const known = state.library.variables.find((record) => record.key === slot.key && record.text === value);
+  slot.values.push(known ? cloneVariableRecord(known) : { key: slot.key, text: value, label: "", tags: [] });
+  return true;
+}
+
+function renderSlotValues(container, slot) {
+  container.replaceChildren();
+  if (!slot.values.length) {
+    const hint = document.createElement("span");
+    hint.className = "cbo-variable-hint";
+    hint.textContent = "还没有值。在上方输入后回车添加。";
+    container.append(hint);
+    return;
+  }
+  slot.values.forEach((value, valueIndex) => {
+    const chip = document.createElement("span");
+    chip.className = "cbo-variable-chip";
+    const text = document.createElement("span");
+    text.className = "cbo-variable-chip-text";
+    text.textContent = value.label ? `${value.text} [${value.label}]` : value.text;
+    text.title = value.text;
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "cbo-variable-chip-remove";
+    remove.textContent = "×";
+    remove.setAttribute("aria-label", `移除 ${value.text}`);
+    remove.addEventListener("click", () => {
+      slot.values.splice(valueIndex, 1);
+      renderVariableSlots();
+      updatePreview();
+    });
+    chip.append(text, remove);
+    container.append(chip);
+  });
 }
 
 function renderVariableSlots() {
   const container = byId("cbo-variable-slots");
   if (!container) return;
   container.replaceChildren();
-  if (!state.variableSlots.length) {
-    const empty = document.createElement("div");
-    empty.className = "cbo-library-empty";
-    empty.textContent = "还没有变量槽位。可以从快速输入初始化，或添加一个槽位。";
-    container.append(empty);
-    return;
-  }
+
   state.variableSlots.forEach((slot, slotIndex) => {
     const section = document.createElement("section");
     section.className = "cbo-variable-slot";
+
     const header = document.createElement("div");
     header.className = "cbo-variable-slot-header";
     const key = document.createElement("input");
     key.type = "text";
+    key.className = "cbo-variable-key";
     key.value = slot.key;
-    key.placeholder = "变量 key，如 top";
-    key.setAttribute("aria-label", `第 ${slotIndex + 1} 个变量 key`);
+    key.placeholder = "变量名，如 top";
+    key.spellcheck = false;
+    key.setAttribute("aria-label", `第 ${slotIndex + 1} 个变量名`);
     key.addEventListener("input", () => {
       slot.key = key.value.trim();
-      updateVariableSummary();
+      slot.values.forEach((value) => { value.key = slot.key; });
+      count.textContent = `${slot.values.length} 个值`;
     });
     key.addEventListener("change", () => {
       renderVariableSlots();
@@ -307,65 +317,97 @@ function renderVariableSlots() {
     const count = document.createElement("span");
     count.className = "cbo-variable-slot-count";
     count.textContent = `${slot.values.length} 个值`;
+    const insert = document.createElement("button");
+    insert.type = "button";
+    insert.textContent = "插入";
+    insert.title = `把 {{${slot.key}}} 插入文本模板`;
+    insert.addEventListener("click", () => insertPlaceholder(slot.key));
+    const save = document.createElement("button");
+    save.type = "button";
+    save.textContent = "存入库";
+    save.title = "把这个变量的所有值保存到变量库";
+    save.addEventListener("click", () => saveSlotValuesToLibrary(slotIndex));
     const remove = document.createElement("button");
     remove.type = "button";
     remove.className = "danger";
-    remove.textContent = "移除槽位";
+    remove.textContent = "×";
+    remove.title = "删除这个变量";
+    remove.setAttribute("aria-label", `删除变量 ${slot.key || slotIndex + 1}`);
     remove.addEventListener("click", () => {
       state.variableSlots.splice(slotIndex, 1);
-      renderVariableManager();
-      updateVariableSummary();
+      if (!state.variableSlots.length) state.variableSlots.push({ key: "subject", values: [] });
+      renderVariableSlots();
       updatePreview();
     });
-    header.append(key, count, remove);
+    header.append(key, count, insert, save, remove);
 
-    const actions = document.createElement("div");
-    actions.className = "cbo-variable-slot-actions";
-    const paste = document.createElement("button");
-    paste.type = "button";
-    paste.textContent = "从快速输入保存到库";
-    paste.addEventListener("click", () => saveQuickValuesToLibrary(slotIndex));
-    actions.append(paste);
-
-    const records = document.createElement("div");
-    records.className = "cbo-variable-slot-records";
-    const matches = state.library.variables.filter((record) => record.key === slot.key);
-    if (!state.library.ready) {
-      const hint = document.createElement("span");
-      hint.className = "cbo-settings-hint";
-      hint.textContent = "变量库不可用，可直接使用快速输入。";
-      records.append(hint);
-    } else if (!matches.length) {
-      const hint = document.createElement("span");
-      hint.className = "cbo-settings-hint";
-      hint.textContent = "该 key 暂无已保存值。";
-      records.append(hint);
-    } else {
-      for (const record of matches) {
-        const label = document.createElement("label");
-        label.className = "cbo-variable-record-check";
-        const checkbox = document.createElement("input");
-        checkbox.type = "checkbox";
-        checkbox.checked = selectedSlotValue(slot, record);
-        checkbox.addEventListener("change", () => {
-          if (checkbox.checked) {
-            if (!selectedSlotValue(slot, record)) slot.values.push(cloneVariableRecord(record));
-          } else {
-            slot.values = slot.values.filter((value) => !sameVariableValue(value, record));
-          }
-          count.textContent = `${slot.values.length} 个值`;
-          updateVariableSummary();
-          updatePreview();
-        });
-        const text = document.createElement("span");
-        text.textContent = record.label ? `${record.text} [${record.label}]` : record.text;
-        label.append(checkbox, text);
-        records.append(label);
-      }
+    // 原生 datalist：输入时直接联想该变量名在库里已有的值，省掉一个自建选择器。
+    const listId = `cbo-variable-options-${slotIndex}`;
+    const datalist = document.createElement("datalist");
+    datalist.id = listId;
+    for (const record of state.library.variables.filter((item) => item.key === slot.key)) {
+      const option = document.createElement("option");
+      option.value = record.text;
+      if (record.label) option.label = record.label;
+      datalist.append(option);
     }
-    section.append(header, actions, records);
+
+    const entry = document.createElement("input");
+    entry.type = "text";
+    entry.className = "cbo-variable-entry";
+    entry.placeholder = "输入值后回车添加；多个值可用换行或逗号粘贴";
+    entry.setAttribute("list", listId);
+    entry.setAttribute("aria-label", `为 ${slot.key || "变量"} 添加值`);
+    const commit = () => {
+      const parts = entry.value.split(/[\r\n,，]/);
+      const added = parts.filter((part) => addSlotValue(slot, part)).length;
+      entry.value = "";
+      if (!added) return;
+      renderVariableSlots();
+      updatePreview();
+      // 重渲染会销毁这个输入框，把焦点还回去才能连着录入下一个值。
+      byId("cbo-variable-slots")?.querySelectorAll(".cbo-variable-entry")[slotIndex]?.focus();
+    };
+    entry.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      commit();
+    });
+    // 从 datalist 选中或粘贴多行时，change 也要收口。
+    entry.addEventListener("change", commit);
+
+    const values = document.createElement("div");
+    values.className = "cbo-variable-values";
+    renderSlotValues(values, slot);
+
+    section.append(header, entry, datalist, values);
     container.append(section);
   });
+
+  const summary = byId("cbo-variable-summary");
+  if (summary) {
+    const counts = state.variableSlots.map((slot) => `${slot.key || "未命名"}（${slot.values.length}）`);
+    const total = state.variableSlots.every((slot) => slot.values.length)
+      ? countJobs(...state.variableSlots.map((slot) => slot.values))
+      : 0;
+    summary.textContent = `${counts.join(" × ")} = ${total || "待补全"} 种组合`;
+  }
+}
+
+function insertPlaceholder(name) {
+  const variable = String(name || "").trim();
+  const template = byId("cbo-template");
+  if (!variable) {
+    setStatus("请先填写变量名", "error");
+    return;
+  }
+  const start = Number.isInteger(template.selectionStart) ? template.selectionStart : template.value.length;
+  const end = Number.isInteger(template.selectionEnd) ? template.selectionEnd : start;
+  template.setRangeText(`{{${variable}}}`, start, end, "end");
+  state.templateDirty = true;
+  template.focus();
+  setStatus(`已插入 {{${variable}}}`, "ok");
+  updatePreview();
 }
 
 function addVariableSlot() {
@@ -374,72 +416,155 @@ function addVariableSlot() {
   while (used.has(`variable${index}`)) index += 1;
   state.variableSlots.push({ key: `variable${index}`, values: [] });
   renderVariableSlots();
-  updateVariableSummary();
-}
-
-function initializeVariableSlots() {
-  const key = byId("cbo-variable").value.trim() || "subject";
-  state.variableSlots = [{
-    key,
-    values: variableLinesFromQuickInput().map((text) => ({ key, text, label: "", tags: [] })),
-  }];
-}
-
-function clearVariableSlots() {
-  state.variableSlots = [];
-  renderVariableManager();
-  updateVariableSummary();
   updatePreview();
 }
 
-async function saveQuickValuesToLibrary(slotIndex) {
+async function saveSlotValuesToLibrary(slotIndex) {
   try {
     if (!state.library.ready) throw new Error("变量库不可用，无法保存");
     const slot = state.variableSlots[slotIndex];
-    const texts = variableLinesFromQuickInput();
-    if (!slot?.key) throw new Error("请先填写槽位 key");
-    if (!texts.length) throw new Error("快速输入中没有可保存的变量值");
+    if (!slot?.key) throw new Error("请先填写变量名");
+    if (!slot.values.length) throw new Error("这个变量还没有值");
     const now = Date.now();
-    const added = [];
     const nextVariables = [...state.library.variables];
-    for (const text of texts) {
-      const existing = nextVariables.find((record) => record.key === slot.key && record.text === text && !record.label);
+    const saved = [];
+    for (const value of slot.values) {
+      const existing = nextVariables.find((record) => record.key === slot.key
+        && record.text === value.text
+        && record.label === (value.label || ""));
       if (existing) {
-        added.push(cloneVariableRecord(existing));
+        saved.push(cloneVariableRecord(existing));
         continue;
       }
-      const record = normalizeLibraryData({ variables: [{ key: slot.key, text }] }, now).variables[0];
+      const record = normalizeLibraryData({
+        variables: [{ key: slot.key, text: value.text, label: value.label, tags: value.tags }],
+      }, now).variables[0];
       nextVariables.push(record);
-      added.push(cloneVariableRecord(record));
+      saved.push(cloneVariableRecord(record));
     }
     const next = normalizeLibraryData({ ...librarySnapshot(), variables: nextVariables }, now);
     await replaceLibraryData(next);
     state.library = { ...next, ready: true };
-    slot.values = added;
-    renderVariableManager();
-    updateVariableSummary();
-    updatePreview();
-    setStatus(`已保存 ${added.length} 个变量值`, "ok");
+    slot.values = saved;
+    renderVariableSlots();
+    renderVariableRecords();
+    setStatus(`已保存 ${saved.length} 个变量值到库`, "ok");
   } catch (error) {
     setStatus(error.message, "error");
   }
 }
 
-function openVariableManager() {
-  if (!state.variableSlots.length) initializeVariableSlots();
-  renderVariableManager();
-  const dialog = byId("cbo-variable-manager");
-  if (dialog && !dialog.open) {
-    if (typeof dialog.showModal === "function") dialog.showModal();
-    else dialog.open = true;
+function openDialog(id) {
+  const dialog = byId(id);
+  if (!dialog || dialog.open) return;
+  if (typeof dialog.showModal === "function") dialog.showModal();
+  else dialog.open = true;
+}
+
+async function saveVariableSet() {
+  try {
+    if (!state.library.ready) throw new Error("变量库不可用，无法保存组合");
+    const slots = state.variableSlots.filter((slot) => slot.key && slot.values.length);
+    if (!slots.length) throw new Error("请先填好至少一个变量和它的值");
+    const existingNames = state.library.variableSets.map((record) => record.name).join("、");
+    const name = window.prompt(
+      existingNames ? `组合名称（同名会覆盖）。已有：${existingNames}` : "组合名称",
+      "",
+    );
+    if (name === null) return;
+    const now = Date.now();
+    const existing = state.library.variableSets.find((record) => record.name === name.trim());
+    const normalized = normalizeLibraryData({ variableSets: [{
+      id: existing?.id,
+      name,
+      slots: slots.map((slot) => ({
+        key: slot.key,
+        values: slot.values.map(({ text, label, tags }) => ({ text, label, tags })),
+      })),
+      createdAt: existing?.createdAt || now,
+      updatedAt: now,
+    }] }, now).variableSets[0];
+    await putLibraryRecord("variableSets", normalized);
+    const variableSets = existing
+      ? state.library.variableSets.map((record) => record.id === normalized.id ? normalized : record)
+      : [...state.library.variableSets, normalized];
+    state.library = { ...state.library, variableSets };
+    renderVariableSets();
+    setStatus(`组合「${normalized.name}」已保存`, "ok");
+  } catch (error) {
+    setStatus(error.message, "error");
   }
 }
 
-function renderVariableManager() {
-  renderVariableRecords();
+function loadVariableSet(record) {
+  state.variableSlots = record.slots.map((slot) => ({
+    key: slot.key,
+    values: slot.values.map((value) => ({ key: slot.key, ...cloneVariableRecord(value) })),
+  }));
   renderVariableSlots();
-  renderTemplateRecords();
-  updateVariableSummary();
+  updatePreview();
+  setStatus(`已载入组合：${record.name}`, "ok");
+}
+
+async function removeVariableSet(id) {
+  if (!state.library.ready || !window.confirm("确定删除这个组合吗？当前面板上的变量不会被清空。")) return;
+  try {
+    await deleteLibraryRecord("variableSets", id);
+    state.library = {
+      ...state.library,
+      variableSets: state.library.variableSets.filter((record) => record.id !== id),
+    };
+    renderVariableSets();
+    setStatus("组合已删除", "ok");
+  } catch (error) {
+    setStatus(error.message, "error");
+  }
+}
+
+function renderVariableSets() {
+  const container = byId("cbo-variable-sets");
+  if (!container) return;
+  container.replaceChildren();
+  if (!state.library.ready) {
+    const empty = document.createElement("div");
+    empty.className = "cbo-library-empty";
+    empty.textContent = "IndexedDB 不可用，组合保存暂不可用。";
+    container.append(empty);
+    return;
+  }
+  if (!state.library.variableSets.length) {
+    const empty = document.createElement("div");
+    empty.className = "cbo-library-empty";
+    empty.textContent = "还没有保存的组合。在主面板配好变量后点「保存组合」。";
+    container.append(empty);
+    return;
+  }
+  for (const record of state.library.variableSets) {
+    const row = document.createElement("div");
+    row.className = "cbo-library-record";
+    const main = document.createElement("div");
+    main.className = "cbo-library-record-main";
+    const title = document.createElement("strong");
+    title.textContent = record.name;
+    const meta = document.createElement("span");
+    const counts = record.slots.map((slot) => `${slot.key}（${slot.values.length}）`);
+    meta.textContent = `${counts.join(" × ")} = ${countJobs(...record.slots.map((slot) => slot.values))} 种组合`;
+    main.append(title, meta);
+    const actions = document.createElement("div");
+    actions.className = "cbo-library-record-actions";
+    const load = document.createElement("button");
+    load.type = "button";
+    load.textContent = "载入";
+    load.addEventListener("click", () => loadVariableSet(record));
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "danger";
+    remove.textContent = "删除";
+    remove.addEventListener("click", () => removeVariableSet(record.id));
+    actions.append(load, remove);
+    row.append(main, actions);
+    container.append(row);
+  }
 }
 
 function renderTemplateRecords() {
@@ -635,28 +760,32 @@ async function importLibrary(event) {
     const merged = mergeLibraryData(state.library, incoming);
     await replaceLibraryData(merged);
     state.library = { ...merged, ready: true };
-    renderVariableManager();
+    renderLibrary();
     setStatus("变量库已导入并合并", "ok");
   } catch (error) {
     setStatus(`导入失败：${error.message}`, "error");
   }
 }
 
+function renderLibrary() {
+  renderVariableRecords();
+  renderVariableSets();
+  renderTemplateRecords();
+  renderVariableSlots();
+}
+
 async function loadLibraryState() {
   try {
-    const [variables, templates, templateHistory] = await Promise.all([
-      listLibraryRecords("variables"),
-      listLibraryRecords("templates"),
-      listLibraryRecords("templateHistory"),
-    ]);
-    const data = normalizeLibraryData({ variables, templates, templateHistory });
+    const [variables, variableSets, templates, templateHistory] = await Promise.all(
+      ["variables", "variableSets", "templates", "templateHistory"].map(listLibraryRecords),
+    );
+    const data = normalizeLibraryData({ variables, variableSets, templates, templateHistory });
     state.library = { ...data, ready: true };
-    renderVariableManager();
   } catch (error) {
     state.library = { ...normalizeLibraryData(), ready: false };
     setStatus(`变量库不可用：${error.message}`, "error");
-    renderVariableManager();
   }
+  renderLibrary();
 }
 
 function graphNodes() {
@@ -775,12 +904,12 @@ function appendTreeNode(container, node, selected, level) {
   row.setAttribute("aria-level", String(level));
 
   if (node.type === "folder") {
-    row.setAttribute("aria-expanded", "true");
+    row.setAttribute("aria-expanded", "false");
     const toggle = document.createElement("button");
     toggle.type = "button";
     toggle.className = "cbo-tree-toggle";
-    toggle.textContent = "⌄";
-    toggle.setAttribute("aria-label", `折叠${node.name}`);
+    toggle.textContent = "›";
+    toggle.setAttribute("aria-label", `展开${node.name}`);
     const label = document.createElement("label");
     label.className = "cbo-tree-label";
     const checkbox = document.createElement("input");
@@ -794,6 +923,7 @@ function appendTreeNode(container, node, selected, level) {
     const children = document.createElement("div");
     children.className = "cbo-tree-children";
     children.setAttribute("role", "group");
+    children.hidden = true;
     node.children.forEach((child) => appendTreeNode(children, child, selected, level + 1));
     container.append(row, children);
 
@@ -846,6 +976,23 @@ function renderValueTree(container, values, selectedValuesList, emptyLabel, root
     1,
   );
   updateTreeStates(container);
+  revealCheckedLeaves(container);
+}
+
+// 全部默认折叠，但已勾选的项必须可见，否则预选中的当前模型等于凭空消失。
+function revealCheckedLeaves(container) {
+  for (const leaf of container.querySelectorAll("input[data-tree-value]:checked")) {
+    for (let group = leaf.closest(".cbo-tree-children"); group; group = group.parentElement?.closest(".cbo-tree-children")) {
+      group.hidden = false;
+      const row = group.previousElementSibling;
+      if (!row?.classList.contains("cbo-tree-row")) continue;
+      row.setAttribute("aria-expanded", "true");
+      const toggle = row.querySelector(".cbo-tree-toggle");
+      if (!toggle) continue;
+      toggle.textContent = "⌄";
+      toggle.setAttribute("aria-label", `折叠${row.querySelector(".cbo-tree-label span")?.textContent || ""}`);
+    }
+  }
 }
 
 async function refreshModelSelect() {
@@ -859,6 +1006,10 @@ async function refreshModelSelect() {
 
 async function refreshLoraSelect() {
   const container = byId("cbo-loras");
+  if (!state.settings.loraEnabled) {
+    container.replaceChildren();
+    return;
+  }
   const selectedLora = state.targets.lora.find((target) => target.id === byId("cbo-lora-node").value);
   const currentLora = selectedLora?.inputs?.lora_name || "";
   const values = selectedLora
@@ -966,16 +1117,23 @@ function applyPanelPosition(fallback = null) {
   });
 }
 
+function applyLoraVisibility() {
+  const section = byId("cbo-lora-section");
+  if (section) section.hidden = !state.settings.loraEnabled;
+}
+
 function updateSettingsForm() {
   const mode = byId("cbo-setting-panel-mode");
   const maxJobs = byId("cbo-setting-max-jobs");
   const previewLimit = byId("cbo-setting-preview-limit");
   const filenameTemplate = byId("cbo-setting-filename-template");
-  if (!mode || !maxJobs || !previewLimit || !filenameTemplate) return;
+  const loraEnabled = byId("cbo-setting-lora-enabled");
+  if (!mode || !maxJobs || !previewLimit || !filenameTemplate || !loraEnabled) return;
   mode.value = state.settings.panelMode;
   maxJobs.value = String(state.settings.maxJobs);
   previewLimit.value = String(state.settings.previewLimit);
   filenameTemplate.value = state.settings.filenameTemplate;
+  loraEnabled.checked = state.settings.loraEnabled;
   renderOutputTemplateSettings();
 }
 
@@ -990,11 +1148,13 @@ function saveSettingsFromForm() {
     }
     if (!filenameTemplate) throw new Error("默认保存图片模板不能为空");
     const oldTemplate = state.settings.filenameTemplate;
+    const oldLoraEnabled = state.settings.loraEnabled;
     state.settings = normalizeSettings({
       ...state.settings,
       maxJobs,
       previewLimit,
       panelMode: byId("cbo-setting-panel-mode").value,
+      loraEnabled: byId("cbo-setting-lora-enabled").checked,
       filenameTemplate,
     });
     if (oldTemplate !== state.settings.filenameTemplate) {
@@ -1005,6 +1165,11 @@ function saveSettingsFromForm() {
       });
     }
     applyPanelPosition();
+    applyLoraVisibility();
+    // 重新打开 LoRA 时要把树重新拉一次，否则停在关闭前的空列表。
+    if (!oldLoraEnabled && state.settings.loraEnabled) {
+      refreshLoraSelect().then(updatePreview).catch((error) => setStatus(`读取 LoRA 列表失败：${error.message}`, "error"));
+    }
     updateSettingsForm();
     updateSummary();
     updatePreview();
@@ -1142,43 +1307,36 @@ function outputConfigs() {
     }));
 }
 
+function loraActive() {
+  return state.settings.loraEnabled && state.targets.lora.length > 0;
+}
+
 function collectConfig() {
-  const unetId = byId("cbo-unet-node").value;
-  const loraId = byId("cbo-lora-node").value;
-  const textId = byId("cbo-text-node").value;
-  const values = variableLinesFromQuickInput();
   const maxJobs = state.settings.maxJobs;
   const models = selectedValues(byId("cbo-models"));
-  const loras = state.targets.lora.length ? selectedValues(byId("cbo-loras")) : [""];
-  const variables = state.variableSlots.length
-    ? state.variableSlots.map((slot) => ({
-        key: slot.key,
-        values: slot.values.map(cloneVariableRecord),
-      }))
-    : null;
-  const dimensions = variables ? variableDimensions({ variables }) : [values];
+  const loras = loraActive() ? selectedValues(byId("cbo-loras")) : [""];
+  const variables = state.variableSlots.map((slot) => ({
+    key: slot.key,
+    values: slot.values.map(cloneVariableRecord),
+  }));
+  const dimensions = variableDimensions({ variables });
   const config = {
-    unetId,
-    loraId,
-    textId,
+    unetId: byId("cbo-unet-node").value,
+    loraId: loraActive() ? byId("cbo-lora-node").value : "",
+    textId: byId("cbo-text-node").value,
     template: byId("cbo-template").value,
     outputs: outputConfigs(),
     models,
     loras,
-    values,
-    variable: byId("cbo-variable").value.trim(),
+    variables,
     maxJobs,
   };
-  if (variables) {
-    config.variables = variables;
-    config.variable = variables[0]?.key || config.variable;
-    config.values = variables[0]?.values.map((value) => value.text) || [];
-  }
   if (!config.unetId || !config.textId) throw new Error("请先刷新并选择目标节点");
   if (!models.length) throw new Error("请至少选择一个 UNET 模型");
   if (!loras.length) throw new Error("请至少选择一个 LoRA");
+  if (variables.some((slot) => !slot.key)) throw new Error("每个变量都需要填写变量名");
   if (dimensions.some((valuesForSlot) => !valuesForSlot.length)) {
-    throw new Error(variables ? "每个文本变量槽位至少选择一个值" : "请至少提供一个文本变量值");
+    throw new Error("每个变量至少需要一个值");
   }
   const total = countJobs(models, loras, ...dimensions);
   if (total > maxJobs) {
@@ -1396,51 +1554,62 @@ function buildPanel() {
   if (document.getElementById("cbo-panel")) return document.getElementById("cbo-panel");
   const element = document.createElement("section");
   element.id = "cbo-panel";
+  element.className = "closed";
   element.innerHTML = `
     <header class="cbo-header">
       <div><strong>Batch Orchestrator</strong><span id="cbo-status" class="cbo-status">尚未读取画布</span></div>
-      <div class="cbo-header-actions"><button id="cbo-refresh" type="button">刷新当前画布</button><button id="cbo-settings-button" type="button" aria-expanded="false" aria-controls="cbo-settings-panel" aria-label="打开设置" title="设置">⚙</button><button id="cbo-toggle" type="button" aria-expanded="true" aria-controls="cbo-body" aria-label="收起面板" title="收起面板">⌃</button></div>
+      <div class="cbo-header-actions"><button id="cbo-refresh" type="button">刷新当前画布</button><button id="cbo-settings-button" type="button" aria-label="打开设置" title="设置">⚙</button><button id="cbo-toggle" type="button" aria-expanded="false" aria-controls="cbo-body" aria-label="展开面板" title="展开面板">⌄</button></div>
     </header>
     <div class="cbo-body">
-      <div id="cbo-settings-panel" class="cbo-settings-panel" hidden>
-        <div class="cbo-settings-heading"><strong>设置</strong><span>只保存在当前浏览器</span></div>
-        <label>面板模式<select id="cbo-setting-panel-mode"><option value="fixed">固定（右上角）</option><option value="floating">浮动（可拖动）</option></select></label>
-        <label>最大任务数<input id="cbo-setting-max-jobs" type="number" min="1" step="1"></label>
-        <label>预览任务数<input id="cbo-setting-preview-limit" type="number" min="1" max="50" step="1"></label>
-        <label>默认保存图片模板<input id="cbo-setting-filename-template" type="text" spellcheck="false"></label>
-        <div class="cbo-settings-subheading">当前输出节点模板</div>
-        <div id="cbo-setting-output-templates" class="cbo-setting-output-templates"></div>
-        <div class="cbo-settings-actions"><button id="cbo-reset-position" type="button">重置位置</button><button id="cbo-save-settings" class="primary" type="button">保存设置</button></div>
-      </div>
       <div id="cbo-summary" class="cbo-summary">尚未读取画布</div>
       <label>UNET 加载器<div class="cbo-node-control"><select id="cbo-unet-node"></select><button id="cbo-unet-locate" class="cbo-locate" type="button" aria-label="定位 UNET 加载器">定位</button></div></label>
       <label>模型（可多选）<div id="cbo-models" class="cbo-tree" aria-label="模型列表"></div></label>
-      <label>LoRA 加载器<div class="cbo-node-control"><select id="cbo-lora-node"></select><button id="cbo-lora-locate" class="cbo-locate" type="button" aria-label="定位 LoRA 加载器">定位</button></div></label>
-      <label>LoRA（可多选）<div id="cbo-loras" class="cbo-tree" aria-label="LoRA 列表"></div></label>
+      <div id="cbo-lora-section">
+        <label>LoRA 加载器<div class="cbo-node-control"><select id="cbo-lora-node"></select><button id="cbo-lora-locate" class="cbo-locate" type="button" aria-label="定位 LoRA 加载器">定位</button></div></label>
+        <label>LoRA（可多选）<div id="cbo-loras" class="cbo-tree" aria-label="LoRA 列表"></div></label>
+      </div>
       <label>CLIP 文本节点<div class="cbo-node-control"><select id="cbo-text-node"></select><button id="cbo-text-locate" class="cbo-locate" type="button" aria-label="定位 CLIP 文本节点">定位</button></div></label>
-      <label>文本模板<textarea id="cbo-template" rows="5" placeholder="使用 {{subject}} 作为变量"></textarea></label>
-      <div class="cbo-variable-row"><label>变量名<input id="cbo-variable" value="subject" spellcheck="false"></label><button id="cbo-insert-variable" type="button">插入变量</button><button id="cbo-variable-manager-open" type="button">组合变量</button></div>
-      <label>变量值（每行一个）<textarea id="cbo-values" rows="4" placeholder="cat&#10;dog"></textarea></label>
-      <div id="cbo-variable-summary" class="cbo-variable-summary">组合变量未启用；当前使用下方快速输入。</div>
-      <fieldset><legend>输出文件名（可逐个设置，支持 {{model}}、{{lora}}、{{value}}、{{index}}、{{seed}}、{{key}}、{{key_label}}）</legend><div id="cbo-output-nodes" class="cbo-output-nodes"></div></fieldset>
+      <div class="cbo-section-heading"><span>文本模板</span><button id="cbo-template-manager-open" type="button">模板库</button></div>
+      <textarea id="cbo-template" rows="5" placeholder="使用 {{subject}} 作为变量" aria-label="文本模板"></textarea>
+      <div class="cbo-section-heading"><span>变量</span><button id="cbo-variable-slot-add" type="button">+ 添加变量</button><button id="cbo-variable-set-save" type="button">保存组合</button><button id="cbo-variable-manager-open" type="button">变量库</button></div>
+      <div id="cbo-variable-slots" class="cbo-variable-slots"></div>
+      <div id="cbo-variable-summary" class="cbo-variable-summary"></div>
+      <fieldset><legend>输出文件名（可逐个设置，支持 {{model}}、{{lora}}、{{value}}、{{index}}、{{seed}}、{{变量名}}、{{变量名_label}}）</legend><div id="cbo-output-nodes" class="cbo-output-nodes"></div></fieldset>
       <pre id="cbo-preview" class="cbo-preview">填好参数后点击“生成预览”；预览数量可在设置中调整，不会提交任务。</pre>
       <div class="cbo-actions"><button id="cbo-preview-button" type="button">生成预览</button><button id="cbo-submit" class="primary" type="button">提交任务</button></div>
       <div class="cbo-task-toolbar"><div id="cbo-task-summary" class="cbo-task-summary">尚未提交任务</div><button id="cbo-task-order" type="button" aria-label="当前最新任务在前，点击切换为最早任务在前">新→旧</button></div>
       <div id="cbo-tasks" class="cbo-tasks"></div>
     </div>
-    <dialog id="cbo-variable-manager" class="cbo-variable-manager" aria-labelledby="cbo-variable-manager-title">
-      <div class="cbo-dialog-header"><strong id="cbo-variable-manager-title">变量与模板库</strong><button id="cbo-library-close" type="button" aria-label="关闭变量库">关闭</button></div>
+    <dialog id="cbo-settings-dialog" class="cbo-dialog" aria-labelledby="cbo-settings-title">
+      <div class="cbo-dialog-header"><strong id="cbo-settings-title">设置</strong><span class="cbo-settings-hint">只保存在当前浏览器</span><button id="cbo-settings-close" type="button" aria-label="关闭设置">关闭</button></div>
       <section class="cbo-manager-section">
-        <div class="cbo-manager-heading"><strong>组合变量槽位</strong><span>每个槽位的值会参与笛卡尔积</span></div>
-        <div id="cbo-variable-slots" class="cbo-variable-slots"></div>
-        <div class="cbo-manager-actions"><button id="cbo-variable-slot-add" type="button">添加槽位</button><button id="cbo-variable-slots-clear" type="button">回到快速输入</button></div>
+        <label>面板模式<select id="cbo-setting-panel-mode"><option value="fixed">固定（右上角）</option><option value="floating">浮动（可拖动）</option></select></label>
+        <label class="cbo-check-row"><input id="cbo-setting-lora-enabled" type="checkbox"><span>启用 LoRA 维度（关闭后隐藏 LoRA 选择，不参与组合）</span></label>
+        <label>最大任务数<input id="cbo-setting-max-jobs" type="number" min="1" step="1"></label>
+        <label>预览任务数<input id="cbo-setting-preview-limit" type="number" min="1" max="50" step="1"></label>
+        <label>默认保存图片模板<input id="cbo-setting-filename-template" type="text" spellcheck="false"></label>
+        <div class="cbo-settings-subheading">当前输出节点模板</div>
+        <div id="cbo-setting-output-templates" class="cbo-setting-output-templates"></div>
+      </section>
+      <section class="cbo-manager-section cbo-library-transfer">
+        <div class="cbo-manager-heading"><strong>迁移</strong><span>导出 JSON 后可在其他浏览器或 ComfyUI 安装导入</span></div>
+        <input id="cbo-library-import" type="file" accept="application/json,.json">
+        <button id="cbo-library-export" type="button">导出变量库 JSON</button>
+      </section>
+      <div class="cbo-settings-actions"><button id="cbo-reset-position" type="button">重置位置</button><button id="cbo-save-settings" class="primary" type="button">保存设置</button></div>
+    </dialog>
+    <dialog id="cbo-variable-manager" class="cbo-dialog" aria-labelledby="cbo-variable-manager-title">
+      <div class="cbo-dialog-header"><strong id="cbo-variable-manager-title">变量库</strong><button id="cbo-library-close" type="button" aria-label="关闭变量库">关闭</button></div>
+      <section class="cbo-manager-section">
+        <div class="cbo-manager-heading"><strong>已保存的组合</strong><span>载入后会替换主面板上的全部变量</span></div>
+        <div id="cbo-variable-sets" class="cbo-library-records"></div>
       </section>
       <section class="cbo-manager-section">
-        <div class="cbo-manager-heading"><strong>变量值库</strong><span>key、文本、label、标签和备注均可搜索</span></div>
-        <div class="cbo-manager-filter"><label>搜索<input id="cbo-variable-search" type="search" placeholder="搜索文本或 key"></label><label>标签<input id="cbo-variable-tag-filter" type="text" placeholder="精确匹配标签"></label></div>
+        <div class="cbo-manager-heading"><strong>变量值</strong><span>变量名、文本、label、标签和备注均可搜索</span></div>
+        <div class="cbo-manager-filter"><label>搜索<input id="cbo-variable-search" type="search" placeholder="搜索文本或变量名"></label><label>标签<input id="cbo-variable-tag-filter" type="text" placeholder="精确匹配标签"></label></div>
         <div id="cbo-variable-records" class="cbo-library-records"></div>
         <div class="cbo-library-editor">
-          <input id="cbo-library-key" type="text" placeholder="key，如 top" spellcheck="false">
+          <input id="cbo-library-key" type="text" placeholder="变量名，如 top" spellcheck="false">
           <input id="cbo-library-text" type="text" placeholder="完整文本">
           <input id="cbo-library-label" type="text" placeholder="文件名 label（可选）" spellcheck="false">
           <input id="cbo-library-tags" type="text" placeholder="标签，用逗号分隔">
@@ -1448,25 +1617,29 @@ function buildPanel() {
           <div class="cbo-manager-actions"><button id="cbo-library-save" class="primary" type="button">添加变量值</button><button id="cbo-library-cancel" type="button">清空编辑</button></div>
         </div>
       </section>
+    </dialog>
+    <dialog id="cbo-template-manager" class="cbo-dialog" aria-labelledby="cbo-template-manager-title">
+      <div class="cbo-dialog-header"><strong id="cbo-template-manager-title">模板库</strong><button id="cbo-template-close" type="button" aria-label="关闭模板库">关闭</button></div>
       <section class="cbo-manager-section">
-        <div class="cbo-manager-heading"><strong>模板库</strong><span>当前主面板模板可保存为命名模板</span></div>
+        <div class="cbo-manager-heading"><strong>保存当前模板</strong><span>保存的是主面板文本框里的内容</span></div>
         <input id="cbo-template-record-id" type="hidden">
         <div class="cbo-manager-filter"><label>模板名称<input id="cbo-template-name" type="text" placeholder="如：服装组合"></label><label>标签<input id="cbo-template-tags" type="text" placeholder="标签，用逗号分隔"></label></div>
         <div class="cbo-manager-actions"><button id="cbo-template-save" class="primary" type="button">保存当前模板</button><button id="cbo-template-clear" type="button">清空模板编辑</button></div>
-        <div id="cbo-template-records" class="cbo-library-records"></div>
-        <div class="cbo-settings-subheading">最近使用（最多 ${MAX_TEMPLATE_HISTORY} 条）</div>
-        <div id="cbo-template-history" class="cbo-library-records"></div>
       </section>
-      <section class="cbo-manager-section cbo-library-transfer">
-        <div class="cbo-manager-heading"><strong>迁移</strong><span>导出 JSON 后可在其他浏览器或 ComfyUI 安装导入</span></div>
-        <input id="cbo-library-import" type="file" accept="application/json,.json">
-        <button id="cbo-library-export" type="button">导出变量库 JSON</button>
+      <section class="cbo-manager-section">
+        <div class="cbo-manager-heading"><strong>已保存模板</strong></div>
+        <div id="cbo-template-records" class="cbo-library-records"></div>
+      </section>
+      <section class="cbo-manager-section">
+        <div class="cbo-manager-heading"><strong>最近使用</strong><span>最多 ${MAX_TEMPLATE_HISTORY} 条</span></div>
+        <div id="cbo-template-history" class="cbo-library-records"></div>
       </section>
     </dialog>`;
   document.body.append(element);
 
   updateSettingsForm();
-  renderVariableManager();
+  applyLoraVisibility();
+  renderLibrary();
   applyPanelPosition();
   installPanelDrag(element);
 
@@ -1477,23 +1650,22 @@ function buildPanel() {
     toggle.setAttribute("aria-expanded", String(!closed));
     toggle.setAttribute("aria-label", closed ? "展开面板" : "收起面板");
     toggle.title = closed ? "展开面板" : "收起面板";
+    // 折叠态宽度是收缩的，展开后要按新尺寸重新夹一次，否则会顶出屏幕右边。
+    if (!closed && state.settings.panelMode === "floating" && state.settings.position) {
+      state.settings.position = setPanelPosition(state.settings.position);
+    }
   });
   byId("cbo-settings-button").addEventListener("click", () => {
-    if (element.classList.contains("closed")) {
-      element.classList.remove("closed");
-      const toggle = byId("cbo-toggle");
-      toggle.textContent = "⌃";
-      toggle.setAttribute("aria-expanded", "true");
-      toggle.setAttribute("aria-label", "收起面板");
-      toggle.title = "收起面板";
-    }
-    const settings = byId("cbo-settings-panel");
-    const open = settings.hidden;
-    settings.hidden = !open;
-    const button = byId("cbo-settings-button");
-    button.setAttribute("aria-expanded", String(open));
-    if (open) updateSettingsForm();
+    updateSettingsForm();
+    openDialog("cbo-settings-dialog");
   });
+  byId("cbo-settings-close").addEventListener("click", () => byId("cbo-settings-dialog").close());
+  byId("cbo-template-manager-open").addEventListener("click", () => {
+    renderTemplateRecords();
+    openDialog("cbo-template-manager");
+  });
+  byId("cbo-template-close").addEventListener("click", () => byId("cbo-template-manager").close());
+  byId("cbo-variable-set-save").addEventListener("click", saveVariableSet);
   byId("cbo-reset-position").addEventListener("click", resetPanelPosition);
   byId("cbo-save-settings").addEventListener("click", saveSettingsFromForm);
   byId("cbo-refresh").addEventListener("click", refresh);
@@ -1502,10 +1674,13 @@ function buildPanel() {
     const config = updatePreview(true);
     if (config) void recordTemplateUse(config.template);
   });
-  byId("cbo-variable-manager-open").addEventListener("click", openVariableManager);
+  byId("cbo-variable-manager-open").addEventListener("click", () => {
+    renderVariableRecords();
+    renderVariableSets();
+    openDialog("cbo-variable-manager");
+  });
   byId("cbo-library-close").addEventListener("click", () => byId("cbo-variable-manager").close());
   byId("cbo-variable-slot-add").addEventListener("click", addVariableSlot);
-  byId("cbo-variable-slots-clear").addEventListener("click", clearVariableSlots);
   byId("cbo-variable-search").addEventListener("input", renderVariableRecords);
   byId("cbo-variable-tag-filter").addEventListener("input", renderVariableRecords);
   byId("cbo-library-save").addEventListener("click", saveVariableRecord);
@@ -1517,21 +1692,6 @@ function buildPanel() {
   byId("cbo-task-order").addEventListener("click", () => {
     state.taskOrder = state.taskOrder === "desc" ? "asc" : "desc";
     renderTasks();
-  });
-  byId("cbo-insert-variable").addEventListener("click", () => {
-    const variable = byId("cbo-variable").value.trim();
-    const template = byId("cbo-template");
-    if (!variable) {
-      setStatus("请先填写变量名", "error");
-      return;
-    }
-    const start = Number.isInteger(template.selectionStart) ? template.selectionStart : template.value.length;
-    const end = Number.isInteger(template.selectionEnd) ? template.selectionEnd : start;
-    template.setRangeText(`{{${variable}}}`, start, end, "end");
-    state.templateDirty = true;
-    template.focus();
-    setStatus(`已插入 {{${variable}}}`, "ok");
-    updatePreview();
   });
   byId("cbo-text-node").addEventListener("change", () => {
     const target = state.targets.text.find((item) => item.id === byId("cbo-text-node").value);
@@ -1551,8 +1711,7 @@ function buildPanel() {
     state.templateDirty = true;
     updatePreview();
   });
-  ["cbo-models", "cbo-loras", "cbo-variable", "cbo-values"].forEach((id) => {
-    byId(id).addEventListener("input", updatePreview);
+  ["cbo-models", "cbo-loras"].forEach((id) => {
     byId(id).addEventListener("change", updatePreview);
   });
   window.addEventListener("resize", () => {

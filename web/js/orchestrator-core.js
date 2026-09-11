@@ -110,7 +110,9 @@ export function buildModelTree(values) {
   return roots;
 }
 
-const VARIABLE_KEY = /^[A-Za-z][A-Za-z0-9_]*$/;
+// 允许中文等 Unicode 字母做变量名，例如 {{上衣}}。
+const VARIABLE_KEY = /^\p{L}[\p{L}\p{N}_]*$/u;
+const PLACEHOLDER = /\{\{(\p{L}[\p{L}\p{N}_]*)\}\}/gu;
 
 function normalizeVariableValue(value) {
   const record = typeof value === "object" && value !== null ? value : { text: value };
@@ -125,17 +127,12 @@ function normalizeVariableValue(value) {
 }
 
 export function normalizeVariableSlots(config) {
-  const isLegacy = !(Array.isArray(config.variables) && config.variables.length);
-  const source = isLegacy
-    ? [{
-        key: config.variable,
-        values: [...(config.values || [])].map((text) => ({ text, label: "", tags: [] })),
-      }]
-    : config.variables;
+  const slots = Array.isArray(config.variables) ? config.variables : [];
+  if (!slots.length) throw new Error("至少需要一个文本变量");
   const keys = new Set();
-  return source.map((slot) => {
+  return slots.map((slot) => {
     const key = String(slot?.key || "").trim();
-    if (!key || (!isLegacy && !VARIABLE_KEY.test(key))) {
+    if (!key || !VARIABLE_KEY.test(key)) {
       throw new Error(`文本变量 key 无效：${key || "不能为空"}`);
     }
     if (keys.has(key)) throw new Error(`文本变量 key 重复：${key}`);
@@ -149,20 +146,10 @@ export function normalizeVariableSlots(config) {
 export function replacePlaceholders(template, replacements) {
   const source = String(template);
   const names = new Set(Object.keys(replacements || {}));
-  for (const match of source.matchAll(/\{\{([A-Za-z][A-Za-z0-9_]*)\}\}/g)) {
+  for (const match of source.matchAll(PLACEHOLDER)) {
     if (!names.has(match[1])) throw new Error(`文本模板中没有找到变量 ${match[1]}`);
   }
-  return source.replace(/\{\{([A-Za-z][A-Za-z0-9_]*)\}\}/g, (_, key) => String(replacements[key]));
-}
-
-export function replacePlaceholder(template, variable, value) {
-  const name = String(variable || "").trim();
-  if (!name) throw new Error("文本变量名不能为空");
-  const placeholder = `{{${name}}}`;
-  if (!String(template).includes(placeholder)) {
-    throw new Error(`文本模板中没有找到 placeholder（占位符）${placeholder}`);
-  }
-  return String(template).split(placeholder).join(String(value));
+  return source.replace(PLACEHOLDER, (_, key) => String(replacements[key]));
 }
 
 function dynamicToken(value) {
@@ -225,7 +212,7 @@ export function sanitizeFilenamePrefix(prefix) {
 export function renderFilename(template, fields) {
   const source = String(template ?? "").trim();
   if (!source) throw new Error("输出文件名模板不能为空");
-  const rendered = source.replace(/\{\{([a-zA-Z0-9_]+)\}\}/g, (match, key) => {
+  const rendered = source.replace(/\{\{([\p{L}\p{N}_]+)\}\}/gu, (match, key) => {
     if (!Object.hasOwn(fields, key)) throw new Error(`不支持的文件名变量 ${match}`);
     if (key === "index") return filenameIndex(fields[key]);
     return dynamicToken(fields[key]);
@@ -270,9 +257,7 @@ export function* expandJobs(prompt, config) {
         jobPrompt[unetId].inputs.unet_name = model;
         if (loraId) jobPrompt[loraId].inputs.lora_name = lora;
         const replacements = Object.fromEntries(combination.map((item) => [item.key, item.text]));
-        jobPrompt[textId].inputs.text = variables.length === 1 && !VARIABLE_KEY.test(variables[0].key)
-          ? replacePlaceholder(baseText, variables[0].key, combination[0].text)
-          : replacePlaceholders(baseText, replacements);
+        jobPrompt[textId].inputs.text = replacePlaceholders(baseText, replacements);
 
         const value = combination[0].text;
         const filenameFields = {

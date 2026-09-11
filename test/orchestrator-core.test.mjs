@@ -7,7 +7,6 @@ import {
   discoverTargets,
   expandJobs,
   renderFilename,
-  replacePlaceholder,
   sanitizeFilenamePrefix,
 } from "../web/js/orchestrator-core.js";
 
@@ -114,8 +113,7 @@ test("expands a Cartesian product into independent prompt clones", () => {
       { id: "272", template: "batch/{{model}}/{{value}}/{{index}}" },
     ],
     models: ["one.safetensors", "two.safetensors"],
-    values: ["cat", "dog"],
-    variable: "subject",
+    variables: [{ key: "subject", values: [{ text: "cat" }, { text: "dog" }] }],
   })];
 
   assert.equal(jobs.length, 4);
@@ -148,8 +146,7 @@ test("adds LoRA choices to the Cartesian product and prompt clone", () => {
     ],
     models: ["one.safetensors"],
     loras: ["styles/style_a.safetensors", "styles/style_b.safetensors"],
-    values: ["cat", "dog"],
-    variable: "subject",
+    variables: [{ key: "subject", values: [{ text: "cat" }, { text: "dog" }] }],
   })];
 
   assert.equal(jobs.length, 4);
@@ -217,11 +214,6 @@ test("rejects an undefined multi-variable placeholder before yielding a job", ()
   })], /变量|placeholder/i);
 });
 
-test("replaces a named text placeholder and rejects a missing placeholder", () => {
-  assert.equal(replacePlaceholder("portrait of {{subject}}", "subject", "a cat"), "portrait of a cat");
-  assert.throws(() => replacePlaceholder("portrait", "subject", "a cat"), /placeholder/i);
-});
-
 test("uses the edited template instead of the original text node", () => {
   const [job] = expandJobs(basePrompt, {
     unetId: "262",
@@ -229,8 +221,7 @@ test("uses the edited template instead of the original text node", () => {
     template: "edited {{subject}}",
     outputs: [{ id: "272", template: "batch/{{index}}" }],
     models: ["one.safetensors"],
-    values: ["cat"],
-    variable: "subject",
+    variables: [{ key: "subject", values: [{ text: "cat" }] }],
   });
 
   assert.equal(job.prompt["264"].inputs.text, "edited cat");
@@ -252,8 +243,7 @@ test("supports an independent filename template for each output node", () => {
       { id: "285", template: "preview/{{value}}/{{index}}" },
     ],
     models: ["one.safetensors"],
-    values: ["cat"],
-    variable: "subject",
+    variables: [{ key: "subject", values: [{ text: "cat" }] }],
   });
 
   assert.equal(job.prompt["272"].inputs.filename_prefix, "images/one_safetensors/001");
@@ -279,28 +269,36 @@ test("renders and sanitizes output filename fields", () => {
   assert.throws(() => sanitizeFilenamePrefix("/outside"), /绝对路径|absolute|path/i);
 });
 
-test("keeps the legacy single-variable shape", () => {
+test("exposes the first variable as the job value", () => {
   const [job] = expandJobs(basePrompt, {
     unetId: "262",
     textId: "264",
     models: ["one.safetensors"],
-    variable: "subject",
-    values: ["cat"],
+    variables: [{ key: "subject", values: [{ text: "cat" }] }],
   });
 
   assert.equal(job.value, "cat");
   assert.deepEqual(job.variables.map(({ key, text }) => [key, text]), [["subject", "cat"]]);
 });
 
-test("preserves legacy placeholder names outside the new key syntax", () => {
+test("supports non-ASCII variable names", () => {
   const [job] = expandJobs(basePrompt, {
     unetId: "262",
     textId: "264",
     template: "edited {{上衣}}",
+    outputs: [{ id: "272", template: "out/{{上衣}}_{{index}}" }],
     models: ["one.safetensors"],
-    variable: "上衣",
-    values: ["white top"],
+    variables: [{ key: "上衣", values: [{ text: "white top" }] }],
   });
 
   assert.equal(job.prompt["264"].inputs.text, "edited white top");
+  assert.equal(job.prompt["272"].inputs.filename_prefix, "out/white top_001");
+});
+
+test("rejects a config with no variables at all", () => {
+  assert.throws(() => [...expandJobs(basePrompt, {
+    unetId: "262",
+    textId: "264",
+    models: ["one.safetensors"],
+  })], /变量/);
 });

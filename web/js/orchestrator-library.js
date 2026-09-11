@@ -1,10 +1,11 @@
 export const LIBRARY_SCHEMA = "comfyui-batch-orchestrator-library";
-export const LIBRARY_VERSION = 1;
+export const LIBRARY_VERSION = 2;
 export const MAX_TEMPLATE_HISTORY = 100;
 
 const DB_NAME = "comfyui-batch-orchestrator-library";
-const STORE_NAMES = ["variables", "templates", "templateHistory"];
-const VARIABLE_KEY = /^[A-Za-z][A-Za-z0-9_]*$/;
+const STORE_NAMES = ["variables", "variableSets", "templates", "templateHistory"];
+// 与 orchestrator-core.js 保持一致：允许中文等 Unicode 字母做变量名。
+const VARIABLE_KEY = /^\p{L}[\p{L}\p{N}_]*$/u;
 
 function makeId(prefix) {
   if (typeof globalThis.crypto?.randomUUID === "function") return globalThis.crypto.randomUUID();
@@ -55,6 +56,37 @@ function normalizeVariableRecord(value, now) {
     label: stringField(record, "label").trim(),
     tags: normalizeTags(record.tags),
     note: stringField(record, "note").trim(),
+    createdAt,
+    updatedAt: timestampField(record, "updatedAt", createdAt),
+  };
+}
+
+function normalizeVariableSetRecord(value, now) {
+  const record = recordObject(value, "组合变量");
+  const name = stringField(record, "name").trim();
+  if (!name) throw new Error("组合变量名称不能为空");
+  const keys = new Set();
+  const slots = (Array.isArray(record.slots) ? record.slots : []).map((slot) => {
+    const entry = recordObject(slot, "组合变量槽位");
+    const key = stringField(entry, "key").trim();
+    if (!VARIABLE_KEY.test(key)) throw new Error(`组合变量 key 无效：${key || "不能为空"}`);
+    if (keys.has(key)) throw new Error(`组合变量 key 重复：${key}`);
+    keys.add(key);
+    const values = (Array.isArray(entry.values) ? entry.values : []).map((item) => {
+      const source = recordObject(item, "组合变量值");
+      const text = stringField(source, "text").trim();
+      if (!text) throw new Error(`组合变量 ${key} 的值不能为空`);
+      return { text, label: stringField(source, "label").trim(), tags: normalizeTags(source.tags) };
+    });
+    if (!values.length) throw new Error(`组合变量 ${key} 至少需要一个值`);
+    return { key, values };
+  });
+  if (!slots.length) throw new Error("组合变量至少需要一个变量");
+  const createdAt = timestampField(record, "createdAt", now);
+  return {
+    id: stringField(record, "id") || makeId("variable-set"),
+    name,
+    slots,
     createdAt,
     updatedAt: timestampField(record, "updatedAt", createdAt),
   };
@@ -116,6 +148,9 @@ export function normalizeLibraryData(value = {}, now = Date.now()) {
   const variables = Array.isArray(source.variables)
     ? mergeById([], source.variables.map((item) => normalizeVariableRecord(item, now)), "updatedAt")
     : [];
+  const variableSets = Array.isArray(source.variableSets)
+    ? mergeById([], source.variableSets.map((item) => normalizeVariableSetRecord(item, now)), "updatedAt")
+    : [];
   const templates = Array.isArray(source.templates)
     ? mergeById([], source.templates.map((item) => normalizeTemplateRecord(item, now)), "updatedAt")
     : [];
@@ -126,6 +161,7 @@ export function normalizeLibraryData(value = {}, now = Date.now()) {
     schema: LIBRARY_SCHEMA,
     version: LIBRARY_VERSION,
     variables,
+    variableSets,
     templates,
     templateHistory,
   };
@@ -148,6 +184,7 @@ export function mergeLibraryData(current = {}, incoming = {}, now = Date.now()) 
     schema: LIBRARY_SCHEMA,
     version: LIBRARY_VERSION,
     variables: deduplicateVariableContent(mergeById(left.variables, right.variables, "updatedAt")),
+    variableSets: mergeById(left.variableSets, right.variableSets, "updatedAt"),
     templates: mergeById(left.templates, right.templates, "updatedAt"),
     templateHistory: normalizeHistory(
       mergeById(left.templateHistory, right.templateHistory, "lastUsedAt"),
@@ -159,12 +196,17 @@ export function mergeLibraryData(current = {}, incoming = {}, now = Date.now()) 
 function assertArrayEnvelope(source) {
   if (!source || typeof source !== "object" || Array.isArray(source)) throw new Error("变量库导入格式无效");
   if (source.schema !== LIBRARY_SCHEMA) throw new Error("变量库 schema 不匹配");
-  if (source.version !== LIBRARY_VERSION) throw new Error("变量库版本不支持");
+  // v1 导出没有 variableSets，按缺失即为空处理；更高版本无法预知结构，拒绝。
+  if (!Number.isInteger(source.version) || source.version < 1 || source.version > LIBRARY_VERSION) {
+    throw new Error("变量库版本不支持");
+  }
   if (source.exportedAt !== undefined && typeof source.exportedAt !== "string") {
     throw new Error("变量库 exportedAt 类型无效");
   }
   for (const name of STORE_NAMES) {
-    if (!Array.isArray(source[name])) throw new Error(`变量库 ${name} 必须是数组`);
+    if (source[name] !== undefined && !Array.isArray(source[name])) {
+      throw new Error(`变量库 ${name} 必须是数组`);
+    }
   }
 }
 
