@@ -363,3 +363,22 @@
   .cbo-library-editor input:nth-child(5),
   .cbo-library-editor .cbo-manager-actions { grid-column: auto; }
 }
+
+.cbo-help {
+  min-width: 16px;
+  height: 16px;
+  margin-left: 5px;
+  padding: 0;
+  color: var(--cbo-muted);
+  background: var(--cbo-input-bg);
+  border: 1px solid var(--cbo-border);
+  border-radius: 50%;
+  cursor: pointer;
+  font: inherit;
+  font-size: 10px;
+  line-height: 1;
+}
+.cbo-help:hover { color: var(--cbo-fg); background: var(--cbo-hover); }
+.cbo-help-list { display: grid; grid-template-columns: auto 1fr; gap: 5px 10px; margin: 0 0 8px; }
+.cbo-help-list dt { color: var(--cbo-fg); font-family: ui-monospace, monospace; white-space: nowrap; }
+.cbo-help-list dd { margin: 0; color: var(--cbo-muted); font-size: 11px; }

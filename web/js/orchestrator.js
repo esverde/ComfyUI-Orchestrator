@@ -90,13 +90,7 @@ function byId(id) {
 
 // ComfyUI 原生 toast：面板收起时状态栏看不见，错误不能就这么咽掉。
 function notify(detail, severity = "error") {
-  const toast = app.extensionManager?.toast;
-  if (!toast?.add) {
-    // 旧前端没有 toast，退到控制台，总好过消息凭空消失。
-    console[severity === "error" ? "error" : "log"](`[Batch Orchestrator] ${detail}`);
-    return;
-  }
-  toast.add({
+  app.extensionManager.toast.add({
     severity,
     summary: "Batch Orchestrator",
     detail: String(detail),
@@ -467,9 +461,7 @@ async function saveSlotValuesToLibrary(slotIndex) {
 
 function openDialog(id) {
   const dialog = byId(id);
-  if (!dialog || dialog.open) return;
-  if (typeof dialog.showModal === "function") dialog.showModal();
-  else dialog.open = true;
+  if (dialog && !dialog.open) dialog.showModal();
 }
 
 async function saveVariableSet() {
@@ -824,9 +816,6 @@ function locateNode(id) {
 }
 
 async function currentPrompt() {
-  if (typeof app.graphToPrompt !== "function") {
-    throw new Error("当前 ComfyUI 前端不支持 graphToPrompt()");
-  }
   const result = await app.graphToPrompt();
   const prompt = result?.output || result;
   if (!prompt || typeof prompt !== "object" || !Object.keys(prompt).length) {
@@ -854,25 +843,12 @@ function optionValuesFromObjectInfo(data, nodeType, inputName) {
   return [];
 }
 
-function optionValuesFromModels(data) {
-  if (!Array.isArray(data)) return [];
-  return data
-    .map((value) => typeof value === "string" ? value : value?.name)
-    .filter((value) => typeof value === "string" && value.length);
-}
-
-async function listOptions(nodeType, inputName, modelsPath, currentValue) {
+async function listOptions(nodeType, inputName, currentValue) {
   try {
     const values = optionValuesFromObjectInfo(await getJson(`/object_info/${nodeType}`), nodeType, inputName);
     if (values.length) return values;
   } catch {
-    // The models route below handles older or restricted ComfyUI builds.
-  }
-  try {
-    const values = optionValuesFromModels(await getJson(modelsPath));
-    if (values.length) return values;
-  } catch {
-    // A current workflow value is still useful for a one-combination smoke test.
+    // 读不到列表时，当前工作流的取值仍可跑单组合冒烟。
   }
   return currentValue ? [currentValue] : [];
 }
@@ -1010,7 +986,7 @@ async function refreshModelSelect() {
   const container = byId("cbo-models");
   const selectedUnet = state.targets.unet.find((target) => target.id === byId("cbo-unet-node").value);
   const currentModel = selectedUnet?.inputs?.unet_name || "";
-  const values = await listOptions("UNETLoader", "unet_name", "/models/diffusion_models", currentModel);
+  const values = await listOptions("UNETLoader", "unet_name", currentModel);
   const selected = currentModel ? [currentModel] : selectedValues(container);
   renderValueTree(container, values, selected, "没有可用模型", "全部模型");
 }
@@ -1024,7 +1000,7 @@ async function refreshLoraSelect() {
   const selectedLora = state.targets.lora.find((target) => target.id === byId("cbo-lora-node").value);
   const currentLora = selectedLora?.inputs?.lora_name || "";
   const values = selectedLora
-    ? await listOptions("LoraLoaderModelOnly", "lora_name", "/models/loras", currentLora)
+    ? await listOptions("LoraLoaderModelOnly", "lora_name", currentLora)
     : [];
   const selected = currentLora ? [currentLora] : selectedValues(container);
   renderValueTree(container, values, selected, "没有可用 LoRA", "全部 LoRA");
@@ -1547,11 +1523,6 @@ function mountTopbar(group) {
     if (isVisible(group)) return true;
     group.remove();
   }
-  for (const menu of document.querySelectorAll(".comfyui-menu-right, .comfyui-menu")) {
-    menu.append(group);
-    if (isVisible(group)) return true;
-    group.remove();
-  }
   return false;
 }
 
@@ -1614,7 +1585,7 @@ function buildPanel() {
       <div class="cbo-section-heading"><span>变量</span><button id="cbo-variable-slot-add" type="button">+ 添加变量</button><button id="cbo-variable-set-save" type="button">保存组合</button><button id="cbo-variable-manager-open" type="button">变量库</button></div>
       <div id="cbo-variable-slots" class="cbo-variable-slots"></div>
       <div id="cbo-variable-summary" class="cbo-variable-summary"></div>
-      <fieldset><legend>输出文件名（可逐个设置，支持 {{model}}、{{lora}}、{{value}}、{{index}}、{{seed}}、{{变量名}}、{{变量名_label}}）</legend><div id="cbo-output-nodes" class="cbo-output-nodes"></div></fieldset>
+      <fieldset><legend>输出文件名<button id="cbo-filename-help" type="button" class="cbo-help" aria-label="文件名可用变量说明" title="可用变量说明">?</button></legend><div id="cbo-output-nodes" class="cbo-output-nodes"></div></fieldset>
       <pre id="cbo-preview" class="cbo-preview">填好参数后点击“生成预览”；预览数量可在设置中调整，不会提交任务。</pre>
       <div class="cbo-actions"><button id="cbo-preview-button" type="button">生成预览</button><button id="cbo-submit" class="primary" type="button">提交任务</button></div>
       <div class="cbo-task-toolbar"><div id="cbo-task-summary" class="cbo-task-summary">尚未提交任务</div><button id="cbo-task-order" type="button" aria-label="当前最新任务在前，点击切换为最早任务在前">新→旧</button></div>
@@ -1657,6 +1628,24 @@ function buildPanel() {
         </div>
       </section>
     </dialog>
+    <dialog id="cbo-help-dialog" class="cbo-dialog" aria-labelledby="cbo-help-title">
+      <div class="cbo-dialog-header"><strong id="cbo-help-title">文件名可用变量</strong><button id="cbo-help-close" type="button" aria-label="关闭说明">关闭</button></div>
+      <section class="cbo-manager-section">
+        <dl class="cbo-help-list">
+          <dt>{{model}}</dt><dd>UNET 模型名，自动去掉目录和扩展名</dd>
+          <dt>{{lora}}</dt><dd>LoRA 名，同样去掉目录和扩展名；未启用 LoRA 时为空</dd>
+          <dt>{{value}}</dt><dd>第一个变量的值</dd>
+          <dt>{{index}}</dt><dd>任务序号，补零到三位（001、002……）</dd>
+          <dt>{{seed}}</dt><dd>工作流中找到的第一个 seed</dd>
+          <dt>{{变量名}}</dt><dd>任意变量的值，例如变量叫 subject 就写 {{subject}}</dd>
+          <dt>{{变量名_label}}</dt><dd>该变量的文件名 label；没填 label 时回退为值本身</dd>
+        </dl>
+        <div class="cbo-settings-hint">
+          用 / 分隔子目录，例如 batch/{{model}}/{{index}}。不能使用绝对路径或 .. ；
+          文件名中的非法字符会被替换为下划线。
+        </div>
+      </section>
+    </dialog>
     <dialog id="cbo-template-manager" class="cbo-dialog" aria-labelledby="cbo-template-manager-title">
       <div class="cbo-dialog-header"><strong id="cbo-template-manager-title">模板库</strong><button id="cbo-template-close" type="button" aria-label="关闭模板库">关闭</button></div>
       <section class="cbo-manager-section">
@@ -1694,6 +1683,8 @@ function buildPanel() {
     openDialog("cbo-template-manager");
   });
   byId("cbo-template-close").addEventListener("click", () => byId("cbo-template-manager").close());
+  byId("cbo-filename-help").addEventListener("click", () => openDialog("cbo-help-dialog"));
+  byId("cbo-help-close").addEventListener("click", () => byId("cbo-help-dialog").close());
   byId("cbo-variable-set-save").addEventListener("click", saveVariableSet);
   byId("cbo-save-settings").addEventListener("click", saveSettingsFromForm);
   byId("cbo-refresh").addEventListener("click", refresh);

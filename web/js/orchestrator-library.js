@@ -7,9 +7,8 @@ const STORE_NAMES = ["variables", "variableSets", "templates", "templateHistory"
 // 与 orchestrator-core.js 保持一致：允许中文等 Unicode 字母做变量名。
 const VARIABLE_KEY = /^\p{L}[\p{L}\p{N}_]*$/u;
 
-function makeId(prefix) {
-  if (typeof globalThis.crypto?.randomUUID === "function") return globalThis.crypto.randomUUID();
-  return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+function makeId() {
+  return crypto.randomUUID();
 }
 
 function recordObject(record, label) {
@@ -50,7 +49,7 @@ function normalizeVariableRecord(value, now) {
   if (!text) throw new Error("变量文本不能为空");
   const createdAt = timestampField(record, "createdAt", now);
   return {
-    id: stringField(record, "id") || makeId("variable"),
+    id: stringField(record, "id") || makeId(),
     key,
     text,
     label: stringField(record, "label").trim(),
@@ -84,7 +83,7 @@ function normalizeVariableSetRecord(value, now) {
   if (!slots.length) throw new Error("组合变量至少需要一个变量");
   const createdAt = timestampField(record, "createdAt", now);
   return {
-    id: stringField(record, "id") || makeId("variable-set"),
+    id: stringField(record, "id") || makeId(),
     name,
     slots,
     createdAt,
@@ -100,7 +99,7 @@ function normalizeTemplateRecord(value, now) {
   if (!body.trim()) throw new Error("模板内容不能为空");
   const createdAt = timestampField(record, "createdAt", now);
   return {
-    id: stringField(record, "id") || makeId("template"),
+    id: stringField(record, "id") || makeId(),
     name,
     body,
     tags: normalizeTags(record.tags),
@@ -116,7 +115,7 @@ function normalizeHistoryRecord(value, now) {
   const body = stringField(record, "body");
   if (!name || !body.trim()) throw new Error("模板历史记录不能为空");
   return {
-    id: stringField(record, "id") || makeId("history"),
+    id: stringField(record, "id") || makeId(),
     name,
     body,
     lastUsedAt: timestampField(record, "lastUsedAt", now),
