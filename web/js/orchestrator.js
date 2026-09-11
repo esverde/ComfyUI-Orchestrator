@@ -72,6 +72,7 @@ const state = {
   prompt: null,
   targets: { unet: [], lora: [], text: [], outputs: [] },
   tasks: [],
+  batches: new Map(),
   batchSeq: 0,
   taskOrder: "desc",
   templateDirty: false,
@@ -1226,7 +1227,9 @@ function batchLabel(batch) {
   const tasks = state.tasks.filter((task) => task.batch === batch);
   const time = new Date(tasks[0]?.submittedAt || Date.now()).toLocaleTimeString("zh-CN", { hour12: false });
   const done = tasks.filter((task) => task.status === "done").length;
-  return `第 ${batch} 批 · ${time} · ${tasks.length} 个 · 完成 ${done}`;
+  const failed = tasks.filter((task) => task.status === "failed").length;
+  const suffix = failed ? ` · 失败 ${failed}` : "";
+  return `第 ${batch} 批 · ${time} · ${tasks.length} 个 · 完成 ${done}${suffix}`;
 }
 
 function pendingTasks() {
@@ -1235,8 +1238,51 @@ function pendingTasks() {
 
 function clearTasks() {
   state.tasks = [];
+  state.batches.clear();
   state.batchSeq = 0;
   renderTasks();
+}
+
+function failedTasks() {
+  return state.tasks.filter((task) => task.status === "failed");
+}
+
+async function currentRunningId() {
+  try {
+    return (await getJson("/queue"))?.queue_running?.[0]?.[1] || "";
+  } catch {
+    return "";
+  }
+}
+
+// expandJobs 对同一输入必然产出同样顺序，按 index 即可精确定位要重发的任务。
+async function retryFailedTasks() {
+  const failed = failedTasks();
+  if (!failed.length) return;
+  if (!window.confirm(`确定重新提交 ${failed.length} 个失败任务吗？`)) return;
+  let resubmitted = 0;
+  for (const [batch, source] of state.batches) {
+    const wanted = new Map(failed.filter((task) => task.batch === batch).map((task) => [task.index, task]));
+    if (!wanted.size) continue;
+    for (const job of expandJobs(source.prompt, source.config)) {
+      const task = wanted.get(job.index);
+      if (!task) continue;
+      try {
+        task.promptId = await submitPrompt(job.prompt);
+        task.status = "queued";
+        task.error = "";
+        resubmitted += 1;
+      } catch (error) {
+        task.error = error.message;
+      }
+      renderTasks();
+    }
+  }
+  if (resubmitted) startPolling();
+  setStatus(
+    `已重新提交 ${resubmitted}/${failed.length} 个任务`,
+    resubmitted === failed.length ? "ok" : "warn",
+  );
 }
 
 async function cancelPendingTasks() {
@@ -1250,7 +1296,7 @@ async function cancelPendingTasks() {
       body: JSON.stringify({ delete: pending.map((task) => task.promptId) }),
     });
     // /interrupt 会中断当前执行的任何任务，先确认正在跑的确实是我们的，避免误杀。
-    const running = (await getJson("/queue"))?.queue_running?.[0]?.[1];
+    const running = await currentRunningId();
     if (pending.some((task) => task.promptId === running)) {
       await api.fetchApi("/interrupt", { method: "POST" });
     }
@@ -1306,6 +1352,7 @@ function renderTasks() {
     : "尚未提交任务";
   byId("cbo-task-clear").disabled = !state.tasks.length;
   byId("cbo-task-cancel").disabled = !pendingTasks().length;
+  byId("cbo-task-retry").disabled = !failedTasks().length;
 }
 
 async function submitPrompt(prompt) {
@@ -1331,7 +1378,9 @@ async function pollHistory() {
     state.pollTimer = null;
     return;
   }
+  const running = await currentRunningId();
   await Promise.all(pending.map(async (task) => {
+    task.status = task.promptId === running ? "running" : "queued";
     try {
       const history = await getJson(`/history/${encodeURIComponent(task.promptId)}`);
       const entry = history?.[task.promptId];
@@ -1367,6 +1416,7 @@ async function submit() {
     state.batchSeq += 1;
     const batch = state.batchSeq;
     const submittedAt = Date.now();
+    state.batches.set(batch, { config, prompt: state.prompt });
     let processed = 0;
     let failed = 0;
     for (let next = first; !next.done; next = iterator.next()) {
@@ -1474,7 +1524,7 @@ function buildPanel() {
       <fieldset><legend>输出文件名<button id="cbo-filename-help" type="button" class="cbo-help" aria-label="文件名可用变量说明" title="可用变量说明">?</button></legend><div id="cbo-output-nodes" class="cbo-output-nodes"></div></fieldset>
       <details id="cbo-preview-box" class="cbo-preview-box" open><summary>预览</summary><pre id="cbo-preview" class="cbo-preview">填好参数后点击“生成预览”；预览数量可在设置中调整，不会提交任务。</pre></details>
       <div class="cbo-actions"><button id="cbo-preview-button" class="cbo-btn" type="button">生成预览</button><button id="cbo-submit" class="cbo-btn primary" type="button">提交任务</button></div>
-      <div class="cbo-task-toolbar"><div id="cbo-task-summary" class="cbo-task-summary">尚未提交任务</div><button id="cbo-task-cancel" class="cbo-btn" type="button" title="取消队列中尚未完成的任务" disabled>取消</button><button id="cbo-task-clear" class="cbo-btn" type="button" title="清空下方任务记录" disabled>清空</button><button id="cbo-task-order" class="cbo-btn" type="button" aria-label="当前最新任务在前，点击切换为最早任务在前">新→旧</button></div>
+      <div class="cbo-task-toolbar"><div id="cbo-task-summary" class="cbo-task-summary">尚未提交任务</div><button id="cbo-task-retry" class="cbo-btn" type="button" title="重新提交失败的任务" disabled>重试</button><button id="cbo-task-cancel" class="cbo-btn" type="button" title="取消队列中尚未完成的任务" disabled>取消</button><button id="cbo-task-clear" class="cbo-btn" type="button" title="清空下方任务记录" disabled>清空</button><button id="cbo-task-order" class="cbo-btn" type="button" aria-label="当前最新任务在前，点击切换为最早任务在前">新→旧</button></div>
       <div id="cbo-tasks" class="cbo-tasks"></div>
     </div>
     <dialog id="cbo-settings-dialog" class="cbo-dialog" aria-labelledby="cbo-settings-title">
@@ -1595,6 +1645,7 @@ function buildPanel() {
   byId("cbo-library-import").addEventListener("change", importLibrary);
   byId("cbo-task-clear").addEventListener("click", clearTasks);
   byId("cbo-task-cancel").addEventListener("click", cancelPendingTasks);
+  byId("cbo-task-retry").addEventListener("click", retryFailedTasks);
   byId("cbo-task-order").addEventListener("click", () => {
     state.taskOrder = state.taskOrder === "desc" ? "asc" : "desc";
     renderTasks();

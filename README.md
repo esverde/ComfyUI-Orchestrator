@@ -238,7 +238,11 @@ node --check web/js/orchestrator.js
 
 提交后，任务记录按批次分组，每批之前有一条分割线标明批次号、提交时间、任务数和已完成数。记录框内可独立横向滚动查看完整文件名，不会带动面板其它部分。
 
-工具栏上的 `取消` 会把本次记录中尚未完成的任务从 ComfyUI 队列移除；只有当正在执行的任务确实属于本插件时才额外调用中断，避免误停其它来源的任务。`清空` 只清空面板上的记录，不影响已经在队列里的任务。
+轮询时会同时读取 ComfyUI 队列，因此正在执行的那一个会显示为「执行中」并高亮，其余排队任务显示「已入队」。
+
+工具栏上的 `取消` 会把本次记录中尚未完成的任务从 ComfyUI 队列移除；只有当正在执行的任务确实属于本插件时才额外调用中断，避免误停其它来源的任务。`重试` 会重新提交状态为失败的任务，沿用原批次的配置与文件名，重试结果仍归入原批次。`清空` 只清空面板上的记录，不影响已经在队列里的任务。
+
+为支持重试，每个批次会保留一份提交时的配置与基础工作流；重试时按任务序号重新展开，而不是为每个任务各存一份工作流 JSON。
 
 ## 实现说明
 
@@ -494,7 +498,11 @@ node --check web/js/orchestrator.js
 
 After submission the task log is grouped by batch, with a divider before each batch showing its number, submission time, task count, and completed count. The log scrolls horizontally on its own so long filenames can be read without moving the rest of the panel.
 
-`Cancel` in the toolbar removes this log's unfinished tasks from the ComfyUI queue. It only calls interrupt when the currently executing job actually belongs to this extension, so jobs from other sources are never stopped. `Clear` only empties the on-screen log and does not touch anything already queued.
+Polling also reads the ComfyUI queue, so the job currently executing is shown as running and highlighted while the rest stay queued.
+
+`Cancel` in the toolbar removes this log's unfinished tasks from the ComfyUI queue. It only calls interrupt when the currently executing job actually belongs to this extension, so jobs from other sources are never stopped. `Retry` resubmits failed tasks using their original batch configuration and filenames, and the results stay under the original batch. `Clear` only empties the on-screen log and does not touch anything already queued.
+
+To support retry, each batch keeps one snapshot of the config and base workflow it was submitted with; retry re-expands jobs by index instead of storing a workflow JSON per task.
 
 ## Implementation notes
 

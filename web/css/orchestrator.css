@@ -250,6 +250,8 @@
 .cbo-task.done .cbo-task-status { color: var(--cbo-success); }
 .cbo-task.failed .cbo-task-status { color: var(--error-text, #ff8989); }
 .cbo-task.cancelled { opacity: .6; }
+.cbo-task.running { background: var(--cbo-hover); }
+.cbo-task.running .cbo-task-status { color: var(--cbo-focus); }
 
 .cbo-variable-summary { margin: -3px 0 8px; color: var(--cbo-muted); font-size: 11px; }
 .cbo-dialog-header,
