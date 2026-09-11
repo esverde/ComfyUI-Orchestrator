@@ -80,19 +80,6 @@
 
 #cbo-panel[hidden] { display: none; }
 
-.cbo-status {
-  margin-bottom: 6px;
-  padding: 5px 7px;
-  color: var(--cbo-muted);
-  background: var(--cbo-secondary-bg);
-  border-radius: 4px;
-  font-size: 11px;
-  overflow-wrap: anywhere;
-}
-
-.cbo-status.ok { color: var(--cbo-success); }
-.cbo-status.error { color: var(--error-text, #ff8989); }
-
 .cbo-actions { display: flex; gap: 6px; }
 
 .cbo-actions button {

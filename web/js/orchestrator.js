@@ -88,11 +88,26 @@ function byId(id) {
   return document.getElementById(id) || topbar?.querySelector(`#${id}`) || null;
 }
 
+// ComfyUI 原生 toast：面板收起时状态栏看不见，错误不能就这么咽掉。
+function notify(detail, severity = "error") {
+  const toast = app.extensionManager?.toast;
+  if (!toast?.add) {
+    // 旧前端没有 toast，退到控制台，总好过消息凭空消失。
+    console[severity === "error" ? "error" : "log"](`[Batch Orchestrator] ${detail}`);
+    return;
+  }
+  toast.add({
+    severity,
+    summary: "Batch Orchestrator",
+    detail: String(detail),
+    life: severity === "error" ? 6000 : 3000,
+  });
+}
+
+const SEVERITY = { ok: "success", error: "error" };
+
 function setStatus(message, kind = "") {
-  const element = byId("cbo-status");
-  if (!element) return;
-  element.textContent = message;
-  element.className = `cbo-status ${kind}`;
+  notify(message, SEVERITY[kind] || "info");
 }
 
 function setFieldMessage(message, kind = "") {
@@ -1441,6 +1456,7 @@ async function submit() {
     const first = iterator.next();
     await recordTemplateUse(config.template);
     let processed = 0;
+    let failed = 0;
     for (let next = first; !next.done; next = iterator.next()) {
       const job = next.value;
       const task = {
@@ -1462,9 +1478,14 @@ async function submit() {
       }
       state.tasks.push(task);
       processed += 1;
-      setStatus(`已处理 ${processed}/${total}`, task.status === "failed" ? "error" : "ok");
+      if (task.status === "failed") failed += 1;
+      // 进度不逐条弹提示，renderTasks() 已实时刷新任务汇总行。
       renderTasks();
     }
+    notify(
+      failed ? `已提交 ${processed - failed}/${processed} 个任务，${failed} 个失败` : `已提交 ${processed} 个任务`,
+      failed ? "warn" : "success",
+    );
     startPolling();
   } catch (error) {
     setStatus(error.message, "error");
@@ -1580,7 +1601,6 @@ function buildPanel() {
   element.hidden = true;
   element.innerHTML = `
     <div class="cbo-body">
-      <div id="cbo-status" class="cbo-status">尚未读取画布</div>
       <div id="cbo-summary" class="cbo-summary">尚未读取画布</div>
       <label>UNET 加载器<div class="cbo-node-control"><select id="cbo-unet-node"></select><button id="cbo-unet-locate" class="cbo-locate" type="button" aria-label="定位 UNET 加载器">定位</button></div></label>
       <label>模型（可多选）<div id="cbo-models" class="cbo-tree" aria-label="模型列表"></div></label>
