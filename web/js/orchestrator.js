@@ -802,7 +802,8 @@ function locateNode(id) {
   }
   canvas.deselectAll();
   canvas.select(node);
-  canvas.centerOnNode(node);
+  // 对当前选中项做平滑归位，省去自己算 bounds 和猜 animateToBounds 的参数。
+  canvas.fitViewToSelectionAnimated();
   canvas.setDirty(true, true);
   setStatus(`已定位并高亮：${node.title || node.type || `节点 #${id}`}`, "ok");
 }
@@ -1481,13 +1482,27 @@ const CHEVRON = `<svg class="cbo-chevron" viewBox="0 0 16 16" width="13" height=
 
 // 新版前端会保留一个 display:none 的旧版 .comfyui-menu，光看 isConnected
 // 会把「插进了隐藏容器」误判成挂载成功，所以一律以实际可见为准。
+// 顶栏容器：以官方设置按钮组的父元素为准，比猜类名可靠。
+function topbarContainer() {
+  return app.menu?.settingsGroup?.element?.parentElement || null;
+}
+
+// 只取顶栏内的 Crystools，避免 [class*='crystools'] 命中它设置面板里的元素。
+// 再上溯到顶栏的直接子元素，这样插入点在整个监视器组之前而非组内部。
+function crystoolsGroup(menu) {
+  let node = menu.querySelector(CRYSTOOLS_SELECTOR);
+  while (node && node.parentElement !== menu) node = node.parentElement;
+  return node;
+}
+
 // 只插入一次，之后绝不再移动——反复插拔正是之前顶栏闪烁的原因。
-// 插在官方设置按钮组之前：Crystools 也挂在这个位置，先到先得，
-// 因此等它就位后再插，我们自然落在它右边、运行控件左边。
-function mountTopbar() {
-  const anchor = app.menu?.settingsGroup?.element;
-  if (!anchor?.isConnected) return false;
-  anchor.before(topbar);
+function mountTopbar(waitForCrystools) {
+  const menu = topbarContainer();
+  if (!menu) return false;
+  const crystools = crystoolsGroup(menu);
+  if (!crystools && waitForCrystools) return false;
+  // 有 Crystools 就插到它左边；没装则退到设置按钮组之前。
+  (crystools || app.menu.settingsGroup.element).before(topbar);
   positionPanel();
   return true;
 }
@@ -1502,12 +1517,11 @@ function buildTopbar() {
     <button id="cbo-settings-button" type="button" aria-label="打开设置" title="设置">⚙</button>
     <button id="cbo-toggle" type="button" aria-expanded="false" aria-controls="cbo-panel" aria-label="展开面板" title="展开面板">${CHEVRON}</button>`;
 
-  // 顶栏是 Vue 异步渲染的，Crystools 也可能晚到；给它一段宽限期再插入。
+  // 顶栏是 Vue 异步渲染的，Crystools 也可能晚到；宽限期内等它，
+  // 过了就不再等（没装 Crystools 的情况也要能挂上）。
   const deadline = Date.now() + 3000;
   const timer = setInterval(() => {
-    const crystoolsReady = document.querySelector(CRYSTOOLS_SELECTOR);
-    if (!crystoolsReady && Date.now() < deadline) return;
-    if (mountTopbar() || Date.now() >= deadline + 7000) clearInterval(timer);
+    if (mountTopbar(Date.now() < deadline) || Date.now() >= deadline + 7000) clearInterval(timer);
   }, 150);
 }
 
