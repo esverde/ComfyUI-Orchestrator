@@ -255,6 +255,8 @@
 }
 .cbo-dialog::backdrop { background: #0009; }
 .cbo-dialog-header { padding: 9px 11px; background: var(--cbo-header-bg); border-bottom: 1px solid var(--cbo-border); }
+/* 关闭按钮外的 form 只为 method="dialog"，不该占据布局 */
+.cbo-dialog-header form { display: contents; }
 .cbo-dialog-header button,
 .cbo-manager-actions button,
 .cbo-library-transfer button,

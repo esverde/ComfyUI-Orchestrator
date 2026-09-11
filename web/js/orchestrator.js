@@ -24,10 +24,11 @@ const DEFAULT_MAX_JOBS = 500;
 const DEFAULT_PREVIEW_LIMIT = 5;
 const MAX_PREVIEW_LIMIT = 50;
 const SETTINGS_STORAGE_KEY = "comfyui-batch-orchestrator.settings";
+const TASK_STATUS = { queued: "已入队", running: "执行中", done: "完成", failed: "失败" };
 
-function positiveInteger(value, fallback, maximum = Number.MAX_SAFE_INTEGER) {
+function positiveInteger(value, fallback) {
   const number = Number(value);
-  return Number.isInteger(number) && number > 0 ? Math.min(number, maximum) : fallback;
+  return Number.isInteger(number) && number > 0 ? number : fallback;
 }
 
 function normalizeSettings(value = {}) {
@@ -41,7 +42,7 @@ function normalizeSettings(value = {}) {
     : DEFAULT_FILENAME_TEMPLATE;
   return {
     maxJobs: positiveInteger(source.maxJobs, DEFAULT_MAX_JOBS),
-    previewLimit: positiveInteger(source.previewLimit, DEFAULT_PREVIEW_LIMIT, MAX_PREVIEW_LIMIT),
+    previewLimit: Math.min(positiveInteger(source.previewLimit, DEFAULT_PREVIEW_LIMIT), MAX_PREVIEW_LIMIT),
     loraEnabled: source.loraEnabled !== false,
     filenameTemplate,
     outputTemplates,
@@ -87,17 +88,16 @@ function byId(id) {
   return document.getElementById(id) || topbar?.querySelector(`#${id}`) || null;
 }
 
-function notify(detail, severity = "error") {
+const SEVERITY = { error: "error", warn: "warn" };
+
+function setStatus(message, kind = "ok") {
+  const severity = SEVERITY[kind] || "success";
   app.extensionManager.toast.add({
     severity,
     summary: "Batch Orchestrator",
-    detail: String(detail),
+    detail: String(message),
     life: severity === "error" ? 6000 : 3000,
   });
-}
-
-function setStatus(message, kind = "ok") {
-  notify(message, kind === "error" ? "error" : "success");
 }
 
 function setFieldMessage(message, kind = "") {
@@ -975,14 +975,10 @@ function renderOutputTemplateSettings() {
   });
 }
 
-// 按钮组的父级带 mx-2，比操作栏内缩 8px；对齐要以操作栏外边缘为准。
-function topbarBox() {
-  return topbar.closest(".actionbar-container") || topbar;
-}
-
 function positionPanel() {
   if (!panel || panel.hidden || !topbar) return;
-  const anchor = topbarBox().getBoundingClientRect();
+  // 按钮组的父级带 mx-2，比操作栏内缩 8px；对齐要以操作栏外边缘为准。
+  const anchor = (topbar.closest(".actionbar-container") || topbar).getBoundingClientRect();
   const width = panel.offsetWidth || 370;
   const left = Math.min(Math.max(8, anchor.left), Math.max(8, window.innerWidth - width - 8));
   panel.style.left = `${Math.round(left)}px`;
@@ -1225,15 +1221,6 @@ async function refresh() {
   }
 }
 
-function taskStatus(status) {
-  return {
-    queued: "已入队",
-    running: "执行中",
-    done: "完成",
-    failed: "失败",
-  }[status] || status;
-}
-
 function renderTasks() {
   const list = byId("cbo-tasks");
   list.replaceChildren();
@@ -1250,7 +1237,7 @@ function renderTasks() {
     const row = document.createElement("div");
     const status = document.createElement("span");
     status.className = "cbo-task-status";
-    status.textContent = task.error ? "失败" : taskStatus(task.status);
+    status.textContent = task.error ? "失败" : TASK_STATUS[task.status] || task.status;
     if (task.error) status.title = task.error;
     const main = document.createElement("span");
     main.className = "cbo-task-main";
@@ -1348,9 +1335,9 @@ async function submit() {
       // 不逐条弹提示，renderTasks() 已实时刷新汇总行。
       renderTasks();
     }
-    notify(
+    setStatus(
       failed ? `已提交 ${processed - failed}/${processed} 个任务，${failed} 个失败` : `已提交 ${processed} 个任务`,
-      failed ? "warn" : "success",
+      failed ? "warn" : "ok",
     );
     startPolling();
   } catch (error) {
@@ -1362,7 +1349,6 @@ async function submit() {
 
 function installStyles() {
   const href = new URL("../css/orchestrator.css", import.meta.url).href;
-  if ([...document.querySelectorAll("link[rel=stylesheet]")].some((link) => link.href === href)) return;
   const link = document.createElement("link");
   link.rel = "stylesheet";
   link.href = href;
@@ -1376,22 +1362,15 @@ const CHEVRON = `<svg class="cbo-chevron" viewBox="0 0 16 16" width="13" height=
         stroke-linecap="round" stroke-linejoin="round"/>
 </svg>`;
 
-function topbarContainer() {
-  return app.menu?.settingsGroup?.element?.parentElement || null;
-}
-
-function crystoolsGroup(menu) {
-  let node = menu.querySelector(CRYSTOOLS_SELECTOR);
-  while (node && node.parentElement !== menu) node = node.parentElement;
-  return node;
-}
-
 function mountTopbar(waitForCrystools) {
-  const menu = topbarContainer();
+  const settings = app.menu?.settingsGroup?.element;
+  const menu = settings?.parentElement;
   if (!menu) return false;
-  const crystools = crystoolsGroup(menu);
+  // 上溯到顶栏的直接子元素，插入点才在整个监视器组之前而非组内部。
+  let crystools = menu.querySelector(CRYSTOOLS_SELECTOR);
+  while (crystools && crystools.parentElement !== menu) crystools = crystools.parentElement;
   if (!crystools && waitForCrystools) return false;
-  (crystools || app.menu.settingsGroup.element).before(topbar);
+  (crystools || settings).before(topbar);
   positionPanel();
   return true;
 }
@@ -1413,7 +1392,6 @@ function buildTopbar() {
 }
 
 function buildPanel() {
-  if (document.getElementById("cbo-panel")) return document.getElementById("cbo-panel");
   const element = document.createElement("section");
   element.id = "cbo-panel";
   element.hidden = true;
@@ -1439,7 +1417,7 @@ function buildPanel() {
       <div id="cbo-tasks" class="cbo-tasks"></div>
     </div>
     <dialog id="cbo-settings-dialog" class="cbo-dialog" aria-labelledby="cbo-settings-title">
-      <div class="cbo-dialog-header"><strong id="cbo-settings-title">设置</strong><span class="cbo-settings-hint">只保存在当前浏览器</span><button id="cbo-settings-close" type="button" aria-label="关闭设置">关闭</button></div>
+      <div class="cbo-dialog-header"><strong id="cbo-settings-title">设置</strong><span class="cbo-settings-hint">只保存在当前浏览器</span><form method="dialog"><button aria-label="关闭设置">关闭</button></form></div>
       <section class="cbo-manager-section">
         <label class="cbo-check-row"><input id="cbo-setting-lora-enabled" type="checkbox"><span>启用 LoRA 维度（关闭后隐藏 LoRA 选择，不参与组合）</span></label>
         <label>最大任务数<input id="cbo-setting-max-jobs" type="number" min="1" step="1"></label>
@@ -1456,7 +1434,7 @@ function buildPanel() {
       <div class="cbo-settings-actions"><button id="cbo-save-settings" class="primary" type="button">保存设置</button></div>
     </dialog>
     <dialog id="cbo-variable-manager" class="cbo-dialog" aria-labelledby="cbo-variable-manager-title">
-      <div class="cbo-dialog-header"><strong id="cbo-variable-manager-title">变量库</strong><button id="cbo-library-close" type="button" aria-label="关闭变量库">关闭</button></div>
+      <div class="cbo-dialog-header"><strong id="cbo-variable-manager-title">变量库</strong><form method="dialog"><button aria-label="关闭变量库">关闭</button></form></div>
       <section class="cbo-manager-section">
         <div class="cbo-manager-heading"><strong>已保存的组合</strong><span>载入后会替换主面板上的全部变量</span></div>
         <div id="cbo-variable-sets" class="cbo-library-records"></div>
@@ -1476,7 +1454,7 @@ function buildPanel() {
       </section>
     </dialog>
     <dialog id="cbo-help-dialog" class="cbo-dialog" aria-labelledby="cbo-help-title">
-      <div class="cbo-dialog-header"><strong id="cbo-help-title">文件名可用变量</strong><button id="cbo-help-close" type="button" aria-label="关闭说明">关闭</button></div>
+      <div class="cbo-dialog-header"><strong id="cbo-help-title">文件名可用变量</strong><form method="dialog"><button aria-label="关闭说明">关闭</button></form></div>
       <section class="cbo-manager-section">
         <dl class="cbo-help-list">
           <dt>{{model}}</dt><dd>UNET 模型名，自动去掉目录和扩展名</dd>
@@ -1494,7 +1472,7 @@ function buildPanel() {
       </section>
     </dialog>
     <dialog id="cbo-template-manager" class="cbo-dialog" aria-labelledby="cbo-template-manager-title">
-      <div class="cbo-dialog-header"><strong id="cbo-template-manager-title">模板库</strong><button id="cbo-template-close" type="button" aria-label="关闭模板库">关闭</button></div>
+      <div class="cbo-dialog-header"><strong id="cbo-template-manager-title">模板库</strong><form method="dialog"><button aria-label="关闭模板库">关闭</button></form></div>
       <section class="cbo-manager-section">
         <div class="cbo-manager-heading"><strong>保存当前模板</strong><span>保存的是主面板文本框里的内容</span></div>
         <input id="cbo-template-record-id" type="hidden">
@@ -1520,18 +1498,21 @@ function buildPanel() {
   renderLibrary();
 
   byId("cbo-toggle").addEventListener("click", () => setPanelOpen(panel.hidden));
-  byId("cbo-settings-button").addEventListener("click", () => {
-    updateSettingsForm();
-    openDialog("cbo-settings-dialog");
-  });
-  byId("cbo-settings-close").addEventListener("click", () => byId("cbo-settings-dialog").close());
-  byId("cbo-template-manager-open").addEventListener("click", () => {
-    renderTemplateRecords();
-    openDialog("cbo-template-manager");
-  });
-  byId("cbo-template-close").addEventListener("click", () => byId("cbo-template-manager").close());
-  byId("cbo-filename-help").addEventListener("click", () => openDialog("cbo-help-dialog"));
-  byId("cbo-help-close").addEventListener("click", () => byId("cbo-help-dialog").close());
+  // 关闭按钮由 <form method="dialog"> 原生处理，这里只管打开。
+  for (const [opener, dialog, beforeOpen] of [
+    ["cbo-settings-button", "cbo-settings-dialog", updateSettingsForm],
+    ["cbo-template-manager-open", "cbo-template-manager", renderTemplateRecords],
+    ["cbo-filename-help", "cbo-help-dialog", null],
+    ["cbo-variable-manager-open", "cbo-variable-manager", () => {
+      renderVariableRecords();
+      renderVariableSets();
+    }],
+  ]) {
+    byId(opener).addEventListener("click", () => {
+      beforeOpen?.();
+      openDialog(dialog);
+    });
+  }
   byId("cbo-variable-set-save").addEventListener("click", saveVariableSet);
   byId("cbo-save-settings").addEventListener("click", saveSettingsFromForm);
   byId("cbo-refresh").addEventListener("click", refresh);
@@ -1540,12 +1521,6 @@ function buildPanel() {
     const config = updatePreview(true);
     if (config) void recordTemplateUse(config.template);
   });
-  byId("cbo-variable-manager-open").addEventListener("click", () => {
-    renderVariableRecords();
-    renderVariableSets();
-    openDialog("cbo-variable-manager");
-  });
-  byId("cbo-library-close").addEventListener("click", () => byId("cbo-variable-manager").close());
   byId("cbo-variable-slot-add").addEventListener("click", addVariableSlot);
   byId("cbo-variable-search").addEventListener("input", renderVariableRecords);
   byId("cbo-variable-tag-filter").addEventListener("input", renderVariableRecords);
@@ -1564,15 +1539,18 @@ function buildPanel() {
     if (target && !state.templateDirty) byId("cbo-template").value = target.inputs.text || "";
     updatePreview();
   });
-  byId("cbo-unet-node").addEventListener("change", () => {
-    refreshModelSelect().then(() => updatePreview()).catch((error) => setStatus(`读取模型列表失败：${error.message}`, "error"));
-  });
-  byId("cbo-lora-node").addEventListener("change", () => {
-    refreshLoraSelect().then(() => updatePreview()).catch((error) => setStatus(`读取 LoRA 列表失败：${error.message}`, "error"));
-  });
-  byId("cbo-unet-locate").addEventListener("click", () => locateNode(byId("cbo-unet-node").value));
-  byId("cbo-lora-locate").addEventListener("click", () => locateNode(byId("cbo-lora-node").value));
-  byId("cbo-text-locate").addEventListener("click", () => locateNode(byId("cbo-text-node").value));
+  for (const [kind, refreshTree, label] of [
+    ["unet", refreshModelSelect, "模型"],
+    ["lora", refreshLoraSelect, "LoRA"],
+  ]) {
+    byId(`cbo-${kind}-node`).addEventListener("change", () => {
+      refreshTree().then(() => updatePreview())
+        .catch((error) => setStatus(`读取${label}列表失败：${error.message}`, "error"));
+    });
+  }
+  for (const kind of ["unet", "lora", "text"]) {
+    byId(`cbo-${kind}-locate`).addEventListener("click", () => locateNode(byId(`cbo-${kind}-node`).value));
+  }
   byId("cbo-template").addEventListener("input", () => {
     state.templateDirty = true;
     updatePreview();
