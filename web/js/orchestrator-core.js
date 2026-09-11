@@ -124,7 +124,7 @@ function normalizeVariableValue(value) {
   };
 }
 
-export function normalizeVariableSlots(config) {
+function normalizeVariableSlots(config) {
   const slots = Array.isArray(config.variables) ? config.variables : [];
   const keys = new Set();
   return slots.map((slot) => {
@@ -140,7 +140,7 @@ export function normalizeVariableSlots(config) {
   });
 }
 
-export function replacePlaceholders(template, replacements) {
+function replacePlaceholders(template, replacements) {
   const source = String(template);
   const names = new Set(Object.keys(replacements || {}));
   for (const match of source.matchAll(PLACEHOLDER)) {

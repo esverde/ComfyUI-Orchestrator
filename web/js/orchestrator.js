@@ -73,7 +73,6 @@ const state = {
   targets: { unet: [], lora: [], text: [], outputs: [] },
   tasks: [],
   batches: new Map(),
-  taskOrder: "desc",
   templateDirty: false,
   pollTimer: null,
   settings: loadSettings(),
@@ -1136,23 +1135,16 @@ function collectConfig() {
   return config;
 }
 
-function sampleJobs(config) {
-  const samples = [];
-  const iterator = expandJobs(state.prompt, config);
-  while (samples.length < state.settings.previewLimit) {
-    const next = iterator.next();
-    if (next.done) break;
-    samples.push(next.value);
-  }
-  return samples;
-}
-
 function updatePreview(announce = false) {
   if (!state.prompt) return false;
   try {
     const config = collectConfig();
     const total = countJobs(config.models, config.loras, ...variableDimensions(config));
-    const samples = sampleJobs(config);
+    const samples = [];
+    for (const job of expandJobs(state.prompt, config)) {
+      if (samples.length >= state.settings.previewLimit) break;
+      samples.push(job);
+    }
     const hasLora = Boolean(config.loraId);
     const hasMultipleVariables = config.variables.length > 1;
     const lines = [
@@ -1284,13 +1276,7 @@ async function cancelPendingTasks() {
 function renderTasks() {
   const list = byId("cbo-tasks");
   list.replaceChildren();
-  const recent = state.tasks.slice(-50);
-  if (state.taskOrder === "desc") recent.reverse();
-  const orderButton = byId("cbo-task-order");
-  const descending = state.taskOrder === "desc";
-  orderButton.textContent = descending ? "新→旧" : "旧→新";
-  orderButton.title = descending ? "当前最新任务在前，点击切换为最早任务在前" : "当前最早任务在前，点击切换为最新任务在前";
-  orderButton.setAttribute("aria-label", orderButton.title);
+  const recent = state.tasks.slice(-50).reverse();
   let lastBatch = null;
   for (const task of recent) {
     if (task.batch !== lastBatch) {
@@ -1480,7 +1466,7 @@ function buildPanel() {
       <fieldset><legend>输出文件名<button id="cbo-filename-help" type="button" class="cbo-help" aria-label="文件名可用变量说明" title="可用变量说明">?</button></legend><div id="cbo-output-nodes" class="cbo-output-nodes"></div></fieldset>
       <details id="cbo-preview-box" class="cbo-preview-box" open><summary>预览</summary><pre id="cbo-preview" class="cbo-preview">填好参数后点击“生成预览”；预览数量可在设置中调整，不会提交任务。</pre></details>
       <div class="cbo-actions"><button id="cbo-preview-button" class="cbo-btn" type="button">生成预览</button><button id="cbo-submit" class="cbo-btn primary" type="button">提交任务</button></div>
-      <div class="cbo-task-toolbar"><div id="cbo-task-summary" class="cbo-task-summary">尚未提交任务</div><button id="cbo-task-retry" class="cbo-btn" type="button" title="重新提交失败的任务" disabled>重试</button><button id="cbo-task-cancel" class="cbo-btn" type="button" title="取消队列中尚未完成的任务" disabled>取消</button><button id="cbo-task-clear" class="cbo-btn" type="button" title="清空下方任务记录" disabled>清空</button><button id="cbo-task-order" class="cbo-btn" type="button" aria-label="当前最新任务在前，点击切换为最早任务在前">新→旧</button></div>
+      <div class="cbo-task-toolbar"><div id="cbo-task-summary" class="cbo-task-summary">尚未提交任务</div><button id="cbo-task-retry" class="cbo-btn" type="button" title="重新提交失败的任务" disabled>重试</button><button id="cbo-task-cancel" class="cbo-btn" type="button" title="取消队列中尚未完成的任务" disabled>取消</button><button id="cbo-task-clear" class="cbo-btn" type="button" title="清空下方任务记录" disabled>清空</button></div>
       <div id="cbo-tasks" class="cbo-tasks"></div>
     </div>
     <dialog id="cbo-settings-dialog" class="cbo-dialog" aria-labelledby="cbo-settings-title">
@@ -1604,10 +1590,6 @@ function buildPanel() {
   byId("cbo-task-clear").addEventListener("click", clearTasks);
   byId("cbo-task-cancel").addEventListener("click", cancelPendingTasks);
   byId("cbo-task-retry").addEventListener("click", retryFailedTasks);
-  byId("cbo-task-order").addEventListener("click", () => {
-    state.taskOrder = state.taskOrder === "desc" ? "asc" : "desc";
-    renderTasks();
-  });
   byId("cbo-text-node").addEventListener("change", () => {
     const target = state.targets.text.find((item) => item.id === byId("cbo-text-node").value);
     if (target && !state.templateDirty) byId("cbo-template").value = target.inputs.text || "";

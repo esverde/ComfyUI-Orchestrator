@@ -11,8 +11,9 @@
   --cbo-border: var(--border-color, #48515b);
   --cbo-hover: var(--content-hover-bg, #4a5864);
   --cbo-hover-fg: var(--content-hover-fg, var(--cbo-fg));
-  --cbo-accent: var(--content-bg, #256eaa);
-  --cbo-focus: var(--content-hover-bg, #55a9e6);
+  /* 主按钮和焦点框必须与次级底色、悬停底色区分，不能再走同一个主题变量 */
+  --cbo-accent: var(--p-primary-color, #256eaa);
+  --cbo-focus: var(--p-primary-color, #55a9e6);
   --cbo-success: var(--success-text, #7ddf9a);
   --cbo-running: #4ea1ff;
   font: 13px/1.35 system-ui, sans-serif;
@@ -186,8 +187,7 @@
 }
 .cbo-settings-actions .cbo-btn { padding: 6px 12px; }
 .cbo-settings-hint { color: var(--cbo-muted); font-size: 11px; }
-.cbo-summary { margin-bottom: 8px; }
-.cbo-summary,
+.cbo-summary { margin-bottom: 8px; color: var(--cbo-muted); font-size: 11px; }
 .cbo-task-summary { color: var(--cbo-muted); font-size: 11px; }
 .cbo-task-toolbar { display: flex; align-items: center; flex-wrap: wrap; justify-content: space-between; gap: 6px; margin: 10px 0 6px; }
 .cbo-task-summary { flex: 1 1 auto; min-width: 0; }
@@ -344,15 +344,6 @@
 .cbo-library-transfer .cbo-manager-heading { flex: 1 1 100%; }
 .cbo-library-transfer input { flex: 1 1 250px; }
 .cbo-manager-actions .primary { background: var(--cbo-accent); }
-
-@media (max-width: 620px) {
-  .cbo-manager-filter,
-  .cbo-library-editor { grid-template-columns: 1fr; }
-  .cbo-library-editor input:nth-child(3),
-  .cbo-library-editor input:nth-child(4),
-  .cbo-library-editor input:nth-child(5),
-  .cbo-library-editor .cbo-manager-actions { grid-column: auto; }
-}
 
 .cbo-help {
   min-width: 16px;
