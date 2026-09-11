@@ -315,3 +315,7 @@ node --check web/js/orchestrator.js
 - [服务器通信路由](https://docs.comfy.org/development/comfyui-server/comms_routes)
 - [Workflow API 格式](https://docs.comfy.org/development/api-development/workflow-api-format)
 - [LoRA 加载器（仅模型）](https://github.com/Comfy-Org/embedded-docs/blob/main/comfyui_embedded_docs/docs/LoraLoaderModelOnly/zh.md)
+
+## 许可证
+
+[MIT](LICENSE)

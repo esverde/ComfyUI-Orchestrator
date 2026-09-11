@@ -315,3 +315,7 @@ Relevant ComfyUI documentation:
 - [Server communication routes](https://docs.comfy.org/development/comfyui-server/comms_routes)
 - [Workflow API format](https://docs.comfy.org/development/api-development/workflow-api-format)
 - [LoRA Loader (Model Only)](https://github.com/Comfy-Org/embedded-docs/blob/main/comfyui_embedded_docs/docs/LoraLoaderModelOnly/zh.md)
+
+## License
+
+[MIT](LICENSE)
