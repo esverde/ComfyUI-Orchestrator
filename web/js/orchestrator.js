@@ -904,7 +904,7 @@ function appendTreeNode(container, node, selected, level) {
     const toggle = document.createElement("button");
     toggle.type = "button";
     toggle.className = "cbo-tree-toggle";
-    toggle.textContent = "›";
+    toggle.innerHTML = CHEVRON;
     toggle.setAttribute("aria-label", `展开${node.name}`);
     const label = document.createElement("label");
     label.className = "cbo-tree-label";
@@ -1482,8 +1482,14 @@ function installStyles() {
   document.head.append(link);
 }
 
-// Crystools 的监视器容器；找到它就插到它前面，顺序才符合预期。
-const CRYSTOOLS_SELECTOR = ".crystools-monitors-container, .crystools-root, #crystools-monitor-container";
+// 各版本 Crystools 的容器 class 不尽相同，按前缀匹配比枚举可靠。
+const CRYSTOOLS_SELECTOR = "[class*='crystools']";
+
+// 字体里的 ⌄ 字形本身不垂直居中，旋转后仍会偏移；SVG 才能真正居中。
+const CHEVRON = `<svg class="cbo-chevron" viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+  <path d="M3.5 6 L8 10.5 L12.5 6" fill="none" stroke="currentColor" stroke-width="1.8"
+        stroke-linecap="round" stroke-linejoin="round"/>
+</svg>`;
 
 // 新版前端会保留一个 display:none 的旧版 .comfyui-menu，光看 isConnected
 // 会把「插进了隐藏容器」误判成挂载成功，所以一律以实际可见为准。
@@ -1492,10 +1498,23 @@ function isVisible(element) {
   return rect.width > 0 && rect.height > 0;
 }
 
-function topbarAnchors() {
+function crystoolsAnchor() {
   const crystools = document.querySelector(CRYSTOOLS_SELECTOR);
+  if (!crystools || crystools.contains(topbar)) return null;
+  return crystools.closest(".comfyui-button-group") || crystools;
+}
+
+// Crystools 可能比我们晚挂载，那时我们已经落在它右边了，需要复位。
+function pinLeftOfCrystools() {
+  const anchor = crystoolsAnchor();
+  if (!anchor?.isConnected || anchor.previousElementSibling === topbar) return false;
+  anchor.before(topbar);
+  return true;
+}
+
+function topbarAnchors() {
   return [
-    crystools?.closest(".comfyui-button-group") || crystools,
+    crystoolsAnchor(),
     app.menu?.settingsGroup?.element,
     document.querySelector(".comfyui-menu-right"),
   ].filter((element) => element?.isConnected);
@@ -1525,29 +1544,31 @@ function buildTopbar() {
   topbar = document.createElement("div");
   topbar.id = "cbo-topbar";
   topbar.className = "comfyui-button-group";
+  // 状态文字改在面板内显示，顶栏只留标题和三个图标按钮。
   topbar.innerHTML = `
-    <span class="cbo-topbar-title">Batch Orchestrator</span>
-    <span id="cbo-status" class="cbo-status">尚未读取画布</span>
+    <span class="cbo-topbar-title" title="Batch Orchestrator">Batch</span>
     <button id="cbo-refresh" type="button" aria-label="刷新当前画布" title="刷新当前画布">⟳</button>
     <button id="cbo-settings-button" type="button" aria-label="打开设置" title="设置">⚙</button>
-    <button id="cbo-toggle" type="button" aria-expanded="false" aria-controls="cbo-panel" aria-label="展开面板" title="展开面板">⌄</button>`;
+    <button id="cbo-toggle" type="button" aria-expanded="false" aria-controls="cbo-panel" aria-label="展开面板" title="展开面板">${CHEVRON}</button>`;
 
-  if (mountTopbar(topbar)) return;
-  // 顶栏是 Vue 异步挂载的，等它出现；超时就退回悬浮，绝不留下「哪都找不到」。
+  const mounted = mountTopbar(topbar);
+  // 顶栏是 Vue 异步挂载的，Crystools 也可能比我们晚到；持续观察直到两者都就位。
   const watch = () => observer.observe(document.body, { childList: true, subtree: true });
   const observer = new MutationObserver(() => {
     // 试挂载本身会改 DOM，不先断开会把自己的插入/移除又喂回来，空转到超时。
     observer.disconnect();
-    if (mountTopbar(topbar)) {
-      clearTimeout(timer);
+    if (topbar.isConnected && isVisible(topbar)) {
+      if (pinLeftOfCrystools()) positionPanel();
+    } else if (mountTopbar(topbar)) {
       positionPanel();
-      return;
     }
     watch();
   });
   watch();
-  const timer = setTimeout(() => {
-    observer.disconnect();
+  // 给 Crystools 留出加载时间后停止观察，避免长期占用 DOM 变更回调。
+  setTimeout(() => observer.disconnect(), 15000);
+  if (mounted) return;
+  setTimeout(() => {
     if (!topbar.isConnected || !isVisible(topbar)) detachTopbar(topbar);
   }, 5000);
 }
@@ -1559,6 +1580,7 @@ function buildPanel() {
   element.hidden = true;
   element.innerHTML = `
     <div class="cbo-body">
+      <div id="cbo-status" class="cbo-status">尚未读取画布</div>
       <div id="cbo-summary" class="cbo-summary">尚未读取画布</div>
       <label>UNET 加载器<div class="cbo-node-control"><select id="cbo-unet-node"></select><button id="cbo-unet-locate" class="cbo-locate" type="button" aria-label="定位 UNET 加载器">定位</button></div></label>
       <label>模型（可多选）<div id="cbo-models" class="cbo-tree" aria-label="模型列表"></div></label>
