@@ -1165,10 +1165,10 @@ function collectConfig() {
   const maxJobs = state.settings.maxJobs;
   const models = selectedValues(byId("cbo-models"));
   const loras = loraActive() ? selectedValues(byId("cbo-loras")) : [""];
-  const variables = state.variableSlots.map((slot) => ({
-    key: slot.key,
-    values: slot.values.map(cloneVariableRecord),
-  }));
+  // 没填值的变量直接不参与展开：只跑模型 × LoRA 的批次不需要任何变量。
+  const variables = state.variableSlots
+    .filter((slot) => slot.values.length)
+    .map((slot) => ({ key: slot.key, values: slot.values.map(cloneVariableRecord) }));
   const dimensions = variableDimensions({ variables });
   const config = {
     unetId: byId("cbo-unet-node").value,
@@ -1184,9 +1184,6 @@ function collectConfig() {
   if (!models.length) throw new Error("请至少选择一个 UNET 模型");
   if (!loras.length) throw new Error("请至少选择一个 LoRA");
   if (variables.some((slot) => !slot.key)) throw new Error("每个变量都需要填写变量名");
-  if (dimensions.some((valuesForSlot) => !valuesForSlot.length)) {
-    throw new Error("每个变量至少需要一个值");
-  }
   const total = countJobs(models, loras, ...dimensions);
   if (total > maxJobs) {
     throw new Error(`任务数 ${total} 超过上限 ${maxJobs}`);
@@ -1426,7 +1423,7 @@ async function submit() {
   try {
     const config = collectConfig();
     const total = countJobs(config.models, config.loras, ...variableDimensions(config));
-    if (!total) throw new Error("请至少选择一个模型、LoRA（如有）并提供一个文本值");
+    if (!total) throw new Error("请至少选择一个模型和一个 LoRA（如已启用）");
     const iterator = expandJobs(state.prompt, config);
     const first = iterator.next();
     await recordTemplateUse(config.template);

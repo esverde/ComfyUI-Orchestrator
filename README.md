@@ -87,6 +87,8 @@ studio portrait, {{top}}, {{bottom}}, {{shoes}}
 
 The job count is the product of the models, LoRAs, and each variable's values; variable order is expansion order. Variable names may start with any Unicode letter, so `{{上衣}}` is valid too.
 
+Variables are optional. Leave every variable empty to sweep models and LoRAs against one fixed prompt — the job count is then just models × LoRAs, and the text node is left untouched. A variable with no values is ignored, but any `{{placeholder}}` still present in the template is an error, since nothing would replace it. With no variables, `{{value}}` renders as an empty string, so drop it from the filename template.
+
 Once a set of variables is configured, `Save combination` stores it under a name; loading it from the `Variable library` dialog replaces all variables in the panel.
 
 ### 4. Configure output filenames

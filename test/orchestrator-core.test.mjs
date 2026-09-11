@@ -295,10 +295,34 @@ test("supports non-ASCII variable names", () => {
   assert.equal(job.prompt["272"].inputs.filename_prefix, "out/white top_001");
 });
 
-test("rejects a config with no variables at all", () => {
+test("expands models and loras with no variables at all", () => {
+  const jobs = [...expandJobs(basePrompt, {
+    unetId: "262",
+    loraId: "273",
+    textId: "264",
+    template: "a fixed prompt",
+    models: ["a", "b"],
+    loras: ["x", "y"],
+    variables: [],
+    outputs: [{ id: "272", template: "orchestrator/{{model}}_{{lora}}_{{index}}" }],
+  })];
+
+  assert.equal(jobs.length, 4);
+  assert.equal(jobs[0].value, "");
+  assert.deepEqual(jobs[0].variables, []);
+  assert.equal(jobs[0].prompt["264"].inputs.text, "a fixed prompt");
+  assert.equal(jobs[0].filenamePrefixes[0].prefix, "orchestrator/a_x_001");
+  assert.equal(jobs[3].prompt["262"].inputs.unet_name, "b");
+  assert.equal(jobs[3].prompt["273"].inputs.lora_name, "y");
+});
+
+test("rejects a leftover placeholder when no variables are configured", () => {
   assert.throws(() => [...expandJobs(basePrompt, {
     unetId: "262",
     textId: "264",
-    models: ["one.safetensors"],
-  })], /变量/);
+    template: "a {{subject}}",
+    models: ["a.safetensors"],
+    variables: [],
+    outputs: [],
+  })], /没有找到变量 subject/);
 });

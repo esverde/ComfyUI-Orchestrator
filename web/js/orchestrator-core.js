@@ -126,7 +126,6 @@ function normalizeVariableValue(value) {
 
 export function normalizeVariableSlots(config) {
   const slots = Array.isArray(config.variables) ? config.variables : [];
-  if (!slots.length) throw new Error("至少需要一个文本变量");
   const keys = new Set();
   return slots.map((slot) => {
     const key = String(slot?.key || "").trim();
@@ -227,11 +226,12 @@ export function* expandJobs(prompt, config) {
 
   const unetId = String(config.unetId);
   const loraId = config.loraId ? String(config.loraId) : "";
-  const textId = String(config.textId);
+  const textId = config.textId ? String(config.textId) : "";
   const baseText = typeof config.template === "string"
     ? config.template
     : prompt?.[textId]?.inputs?.text;
-  if (typeof baseText !== "string") throw new Error(`找不到文本节点 ${textId}`);
+  const hasText = typeof baseText === "string" && typeof prompt?.[textId]?.inputs?.text === "string";
+  if (variables.length && !hasText) throw new Error(`找不到文本节点 ${textId}`);
   if (!prompt?.[unetId]?.inputs || !Object.hasOwn(prompt[unetId].inputs, "unet_name")) {
     throw new Error(`找不到 UNET 节点 ${unetId}`);
   }
@@ -253,10 +253,12 @@ export function* expandJobs(prompt, config) {
         const jobPrompt = structuredClone(prompt);
         jobPrompt[unetId].inputs.unet_name = model;
         if (loraId) jobPrompt[loraId].inputs.lora_name = lora;
-        const replacements = Object.fromEntries(combination.map((item) => [item.key, item.text]));
-        jobPrompt[textId].inputs.text = replacePlaceholders(baseText, replacements);
+        if (hasText) {
+          const replacements = Object.fromEntries(combination.map((item) => [item.key, item.text]));
+          jobPrompt[textId].inputs.text = replacePlaceholders(baseText, replacements);
+        }
 
-        const value = combination[0].text;
+        const value = combination[0]?.text ?? "";
         const filenameFields = {
           model,
           lora,
