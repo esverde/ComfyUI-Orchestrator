@@ -248,7 +248,6 @@ export function* expandJobs(prompt, config) {
   }
 
   const outputs = (config.outputs || []).map((output) => ({ id: String(output.id), template: output.template }));
-  const total = countJobs(models, loras, ...variables.map(({ values: slotValues }) => slotValues));
   let index = 1;
   for (const model of models) {
     for (const lora of loras) {
@@ -284,7 +283,6 @@ export function* expandJobs(prompt, config) {
 
         yield {
           index,
-          total,
           model,
           lora,
           value,
