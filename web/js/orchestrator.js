@@ -91,10 +91,8 @@ function byId(id) {
   return document.getElementById(id) || topbar?.querySelector(`#${id}`) || null;
 }
 
-const SEVERITY = { error: "error", warn: "warn" };
-
 function setStatus(message, kind = "ok") {
-  const severity = SEVERITY[kind] || "success";
+  const severity = kind === "ok" ? "success" : kind;
   app.extensionManager.toast.add({
     severity,
     summary: "Batch Orchestrator",
@@ -202,12 +200,6 @@ function openVariableEditor(record = null) {
   byId("cbo-library-text")?.focus();
 }
 
-function clearVariableEditor() {
-  state.variableEditorId = "";
-  for (const field of ["key", "text", "label", "tags", "note"]) byId(`cbo-library-${field}`).value = "";
-  byId("cbo-library-save").textContent = "添加变量值";
-}
-
 async function saveVariableRecord() {
   try {
     if (!state.library.ready) throw new Error("变量库不可用，无法保存");
@@ -228,7 +220,7 @@ async function saveVariableRecord() {
       ? state.library.variables.map((record) => record.id === normalized.id ? normalized : record)
       : [...state.library.variables, normalized];
     state.library = { ...state.library, variables };
-    clearVariableEditor();
+    openVariableEditor();
     renderVariableRecords();
     renderVariableSlots();
     setStatus("变量值已保存", "ok");
@@ -564,11 +556,6 @@ function renderTemplateHistory() {
   }
 }
 
-function renderTemplateRecords() {
-  renderTemplates();
-  renderTemplateHistory();
-}
-
 function openTemplateEditor(record = null) {
   state.templateEditorId = record?.id || "";
   byId("cbo-template-name").value = record?.name || "";
@@ -721,7 +708,8 @@ async function importLibrary(event) {
 function renderLibrary() {
   renderVariableRecords();
   renderVariableSets();
-  renderTemplateRecords();
+  renderTemplates();
+  renderTemplateHistory();
   renderVariableSlots();
 }
 
@@ -781,16 +769,9 @@ async function getJson(path) {
 }
 
 function optionValuesFromObjectInfo(data, nodeType, inputName) {
-  const definitions = data?.[nodeType] ? [data[nodeType]] : Object.values(data || {});
-  for (const definition of definitions) {
-    const raw = definition?.input?.required?.[inputName];
-    const values = Array.isArray(raw) && Array.isArray(raw[0]) ? raw[0] : raw;
-    if (Array.isArray(values)) {
-      const strings = values.filter((value) => typeof value === "string");
-      if (strings.length) return strings;
-    }
-  }
-  return [];
+  const raw = data?.[nodeType]?.input?.required?.[inputName];
+  const values = Array.isArray(raw) && Array.isArray(raw[0]) ? raw[0] : raw;
+  return Array.isArray(values) ? values.filter((value) => typeof value === "string") : [];
 }
 
 async function listOptions(nodeType, inputName, currentValue) {
@@ -961,13 +942,7 @@ function outputTemplateFor(id) {
     : state.settings.filenameTemplate;
 }
 
-function writeTemplateInputs(key, value, skip = null) {
-  document.querySelectorAll(".cbo-output-template, .cbo-setting-output-template").forEach((input) => {
-    if (input.dataset.outputId === key && input !== skip) input.value = value;
-  });
-}
-
-function setOutputTemplate(id, value, sourceInput = null) {
+function setOutputTemplate(id, value) {
   const key = String(id);
   const source = String(value ?? "");
   if (!source.trim() || source.trim() === state.settings.filenameTemplate) {
@@ -975,35 +950,7 @@ function setOutputTemplate(id, value, sourceInput = null) {
   } else {
     state.settings.outputTemplates[key] = source;
   }
-  writeTemplateInputs(key, outputTemplateFor(key), sourceInput);
   saveSettings();
-}
-
-function renderOutputTemplateSettings() {
-  const container = byId("cbo-setting-output-templates");
-  if (!container) return;
-  container.replaceChildren();
-  if (!state.targets.outputs.length) {
-    textRow(container, "刷新画布后可为每个输出节点设置单独模板。", "cbo-settings-hint");
-    return;
-  }
-  state.targets.outputs.forEach((target) => {
-    const label = document.createElement("label");
-    label.className = "cbo-setting-output-row";
-    label.textContent = `${target.title} (#${target.id})`;
-    const input = document.createElement("input");
-    input.type = "text";
-    input.className = "cbo-setting-output-template";
-    input.dataset.outputId = target.id;
-    input.value = outputTemplateFor(target.id);
-    input.spellcheck = false;
-    input.addEventListener("input", () => {
-      setOutputTemplate(target.id, input.value, input);
-      updatePreview();
-    });
-    label.append(input);
-    container.append(label);
-  });
 }
 
 function positionPanel() {
@@ -1047,7 +994,6 @@ function updateSettingsForm() {
   filenameTemplate.value = state.settings.filenameTemplate;
   loraEnabled.checked = state.settings.loraEnabled;
   clearTasks.checked = state.settings.clearTasksOnSubmit;
-  renderOutputTemplateSettings();
 }
 
 function saveSettingsFromForm() {
@@ -1071,9 +1017,9 @@ function saveSettingsFromForm() {
       filenameTemplate,
     });
     if (oldTemplate !== state.settings.filenameTemplate) {
-      state.targets.outputs.forEach((target) => {
-        if (!Object.hasOwn(state.settings.outputTemplates, target.id)) {
-          writeTemplateInputs(String(target.id), state.settings.filenameTemplate);
+      document.querySelectorAll(".cbo-output-template").forEach((input) => {
+        if (!Object.hasOwn(state.settings.outputTemplates, input.dataset.outputId)) {
+          input.value = state.settings.filenameTemplate;
         }
       });
     }
@@ -1133,13 +1079,12 @@ function setTargetControls() {
     filename.spellcheck = false;
     filename.setAttribute("aria-label", `${target.title} 文件名模板`);
     filename.addEventListener("input", () => {
-      setOutputTemplate(target.id, filename.value, filename);
+      setOutputTemplate(target.id, filename.value);
       updatePreview();
     });
     row.append(header, filename);
     outputContainer.append(row);
   });
-  renderOutputTemplateSettings();
 
   const firstText = state.targets.text[0];
   if (firstText && !state.templateDirty) {
@@ -1545,9 +1490,8 @@ function buildPanel() {
         <label class="cbo-check-row"><input id="cbo-setting-clear-tasks" type="checkbox"><span>提交新批次前清空任务记录</span></label>
         <label>最大任务数<input id="cbo-setting-max-jobs" type="number" min="1" step="1"></label>
         <label>预览任务数<input id="cbo-setting-preview-limit" type="number" min="1" max="50" step="1"></label>
-        <label>默认保存图片模板<input id="cbo-setting-filename-template" type="text" spellcheck="false"></label>
-        <div class="cbo-settings-subheading">当前输出节点模板</div>
-        <div id="cbo-setting-output-templates" class="cbo-setting-output-templates"></div>
+        <label>默认保存图片模板<input id="cbo-setting-filename-template" type="text" spellcheck="false">
+          <span class="cbo-settings-hint">每个输出节点可在主面板单独覆盖</span></label>
       </section>
       <section class="cbo-manager-section cbo-library-transfer">
         <div class="cbo-manager-heading"><strong>迁移</strong><span>导出 JSON 后可在其他浏览器或 ComfyUI 安装导入</span></div>
@@ -1623,7 +1567,10 @@ function buildPanel() {
   // 关闭按钮由 <form method="dialog"> 原生处理，这里只管打开。
   for (const [opener, dialog, beforeOpen] of [
     ["cbo-settings-button", "cbo-settings-dialog", updateSettingsForm],
-    ["cbo-template-manager-open", "cbo-template-manager", renderTemplateRecords],
+    ["cbo-template-manager-open", "cbo-template-manager", () => {
+      renderTemplates();
+      renderTemplateHistory();
+    }],
     ["cbo-filename-help", "cbo-help-dialog", null],
     ["cbo-variable-manager-open", "cbo-variable-manager", () => {
       renderVariableRecords();
@@ -1649,7 +1596,7 @@ function buildPanel() {
   byId("cbo-variable-search").addEventListener("input", renderVariableRecords);
   byId("cbo-variable-tag-filter").addEventListener("input", renderVariableRecords);
   byId("cbo-library-save").addEventListener("click", saveVariableRecord);
-  byId("cbo-library-cancel").addEventListener("click", clearVariableEditor);
+  byId("cbo-library-cancel").addEventListener("click", () => openVariableEditor());
   byId("cbo-template-save").addEventListener("click", saveCurrentTemplate);
   byId("cbo-template-clear").addEventListener("click", clearTemplateEditor);
   byId("cbo-library-export").addEventListener("click", exportLibrary);

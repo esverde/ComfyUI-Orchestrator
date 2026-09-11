@@ -107,7 +107,7 @@ Static `/` creates a relative subdirectory below ComfyUI's output directory:
 orchestrator/{{model}}/{{value}}_{{index}}
 ```
 
-Open `Settings` from the topbar to change the maximum job count, preview count, default output filename template, whether the LoRA dimension is enabled, and whether the task log is cleared before each new batch. Settings are stored only in the current browser's `localStorage`, not in the repository; per-output template overrides made in either panel are remembered too.
+Open `Settings` from the topbar to change the maximum job count, preview count, default output filename template, whether the LoRA dimension is enabled, and whether the task log is cleared before each new batch. Settings are stored only in the current browser's `localStorage`, not in the repository. The default template applies to every output node that has not been overridden; overrides are made on the output node's own row in the panel and are remembered too.
 
 ### 5. Preview and submit
 

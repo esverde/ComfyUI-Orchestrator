@@ -186,8 +186,6 @@
 }
 .cbo-settings-actions .cbo-btn { padding: 6px 12px; }
 .cbo-settings-hint { color: var(--cbo-muted); font-size: 11px; }
-.cbo-settings-subheading { margin: 10px 0 5px; color: var(--cbo-fg); font-size: 11px; font-weight: 600; }
-.cbo-setting-output-row { margin-bottom: 6px !important; }
 .cbo-summary { margin-bottom: 8px; }
 .cbo-summary,
 .cbo-task-summary { color: var(--cbo-muted); font-size: 11px; }
