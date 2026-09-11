@@ -30,11 +30,6 @@ function positiveInteger(value, fallback, maximum = Number.MAX_SAFE_INTEGER) {
   return Number.isInteger(number) && number > 0 ? Math.min(number, maximum) : fallback;
 }
 
-function normalizePosition(value) {
-  if (!value || !Number.isFinite(Number(value.x)) || !Number.isFinite(Number(value.y))) return null;
-  return { x: Math.round(Number(value.x)), y: Math.round(Number(value.y)) };
-}
-
 function normalizeSettings(value = {}) {
   const source = value && typeof value === "object" ? value : {};
   const outputTemplates = Object.fromEntries(
@@ -47,8 +42,6 @@ function normalizeSettings(value = {}) {
   return {
     maxJobs: positiveInteger(source.maxJobs, DEFAULT_MAX_JOBS),
     previewLimit: positiveInteger(source.previewLimit, DEFAULT_PREVIEW_LIMIT, MAX_PREVIEW_LIMIT),
-    panelMode: source.panelMode === "floating" ? "floating" : "fixed",
-    position: normalizePosition(source.position),
     loraEnabled: source.loraEnabled !== false,
     filenameTemplate,
     outputTemplates,
@@ -87,6 +80,7 @@ const state = {
 };
 
 let panel;
+let topbar;
 
 function byId(id) {
   return document.getElementById(id);
@@ -931,7 +925,7 @@ function appendTreeNode(container, node, selected, level) {
       const expanded = !children.hidden;
       children.hidden = expanded;
       row.setAttribute("aria-expanded", String(!expanded));
-      toggle.textContent = expanded ? "›" : "⌄";
+      toggle.classList.toggle("cbo-open", !expanded);
       toggle.setAttribute("aria-label", `${expanded ? "展开" : "折叠"}${node.name}`);
     });
     checkbox.addEventListener("change", () => {
@@ -989,7 +983,7 @@ function revealCheckedLeaves(container) {
       row.setAttribute("aria-expanded", "true");
       const toggle = row.querySelector(".cbo-tree-toggle");
       if (!toggle) continue;
-      toggle.textContent = "⌄";
+      toggle.classList.add("cbo-open");
       toggle.setAttribute("aria-label", `折叠${row.querySelector(".cbo-tree-label span")?.textContent || ""}`);
     }
   }
@@ -1075,46 +1069,26 @@ function renderOutputTemplateSettings() {
   });
 }
 
-function clampPanelPosition(position) {
-  const width = panel?.offsetWidth || 370;
-  const height = panel?.offsetHeight || 120;
-  const maxX = Math.max(8, window.innerWidth - width - 8);
-  const maxY = Math.max(8, window.innerHeight - height - 8);
-  return {
-    x: Math.min(maxX, Math.max(8, Number(position.x))),
-    y: Math.min(maxY, Math.max(8, Number(position.y))),
-  };
+// 面板锚在顶栏按钮下方展开，样式参考官方任务队列浮层。
+function positionPanel() {
+  if (!panel || panel.hidden || !topbar) return;
+  const anchor = topbar.getBoundingClientRect();
+  const width = panel.offsetWidth || 370;
+  const left = Math.min(Math.max(8, anchor.left), Math.max(8, window.innerWidth - width - 8));
+  panel.style.left = `${Math.round(left)}px`;
+  panel.style.top = `${Math.round(anchor.bottom + 6)}px`;
+  const body = panel.querySelector(".cbo-body");
+  if (body) body.style.maxHeight = `${Math.max(160, Math.round(window.innerHeight - anchor.bottom - 24))}px`;
 }
 
-function setPanelPosition(position) {
-  const safe = clampPanelPosition(position);
-  panel.style.left = `${safe.x}px`;
-  panel.style.top = `${safe.y}px`;
-  panel.style.right = "auto";
-  panel.style.bottom = "auto";
-  return safe;
-}
-
-function defaultFloatingPosition() {
-  return {
-    x: Math.max(8, window.innerWidth - (panel?.offsetWidth || 370) - 16),
-    y: 64,
-  };
-}
-
-function applyPanelPosition(fallback = null) {
-  if (!panel) return;
-  if (state.settings.panelMode === "floating") {
-    const rect = panel.getBoundingClientRect();
-    panel.classList.add("cbo-floating");
-    const position = state.settings.position || fallback || { x: rect.left, y: rect.top };
-    state.settings.position = setPanelPosition(position);
-    return;
-  }
-  panel.classList.remove("cbo-floating", "cbo-dragging");
-  ["left", "top", "right", "bottom"].forEach((property) => {
-    panel.style[property] = "";
-  });
+function setPanelOpen(open) {
+  panel.hidden = !open;
+  const toggle = byId("cbo-toggle");
+  toggle.classList.toggle("cbo-open", open);
+  toggle.setAttribute("aria-expanded", String(open));
+  toggle.setAttribute("aria-label", open ? "收起面板" : "展开面板");
+  toggle.title = open ? "收起面板" : "展开面板";
+  if (open) positionPanel();
 }
 
 function applyLoraVisibility() {
@@ -1123,13 +1097,11 @@ function applyLoraVisibility() {
 }
 
 function updateSettingsForm() {
-  const mode = byId("cbo-setting-panel-mode");
   const maxJobs = byId("cbo-setting-max-jobs");
   const previewLimit = byId("cbo-setting-preview-limit");
   const filenameTemplate = byId("cbo-setting-filename-template");
   const loraEnabled = byId("cbo-setting-lora-enabled");
-  if (!mode || !maxJobs || !previewLimit || !filenameTemplate || !loraEnabled) return;
-  mode.value = state.settings.panelMode;
+  if (!maxJobs || !previewLimit || !filenameTemplate || !loraEnabled) return;
   maxJobs.value = String(state.settings.maxJobs);
   previewLimit.value = String(state.settings.previewLimit);
   filenameTemplate.value = state.settings.filenameTemplate;
@@ -1153,7 +1125,6 @@ function saveSettingsFromForm() {
       ...state.settings,
       maxJobs,
       previewLimit,
-      panelMode: byId("cbo-setting-panel-mode").value,
       loraEnabled: byId("cbo-setting-lora-enabled").checked,
       filenameTemplate,
     });
@@ -1164,7 +1135,6 @@ function saveSettingsFromForm() {
         }
       });
     }
-    applyPanelPosition();
     applyLoraVisibility();
     // 重新打开 LoRA 时要把树重新拉一次，否则停在关闭前的空列表。
     if (!oldLoraEnabled && state.settings.loraEnabled) {
@@ -1178,46 +1148,6 @@ function saveSettingsFromForm() {
   } catch (error) {
     setStatus(error.message, "error");
   }
-}
-
-function resetPanelPosition() {
-  state.settings.position = null;
-  if (state.settings.panelMode === "floating") applyPanelPosition(defaultFloatingPosition());
-  else applyPanelPosition();
-  const persisted = saveSettings();
-  setStatus(persisted ? "面板位置已重置" : "面板位置已重置，但未能保存", persisted ? "ok" : "error");
-}
-
-function installPanelDrag(element) {
-  const header = element.querySelector(".cbo-header");
-  let drag;
-  const finish = (event) => {
-    if (!drag || event.pointerId !== drag.pointerId) return;
-    header.releasePointerCapture?.(event.pointerId);
-    drag = null;
-    element.classList.remove("cbo-dragging");
-    saveSettings();
-  };
-  header.addEventListener("pointerdown", (event) => {
-    if (state.settings.panelMode !== "floating" || event.button !== 0 || event.target.closest?.("button, input, select, textarea")) return;
-    const rect = element.getBoundingClientRect();
-    drag = {
-      pointerId: event.pointerId,
-      offsetX: event.clientX - rect.left,
-      offsetY: event.clientY - rect.top,
-    };
-    header.setPointerCapture?.(event.pointerId);
-    element.classList.add("cbo-dragging");
-  });
-  header.addEventListener("pointermove", (event) => {
-    if (!drag || event.pointerId !== drag.pointerId) return;
-    state.settings.position = setPanelPosition({
-      x: event.clientX - drag.offsetX,
-      y: event.clientY - drag.offsetY,
-    });
-  });
-  header.addEventListener("pointerup", finish);
-  header.addEventListener("pointercancel", finish);
 }
 
 function updateSummary() {
@@ -1550,16 +1480,64 @@ function installStyles() {
   document.head.append(link);
 }
 
+// Crystools 的监视器容器；找到它就插到它前面，顺序才符合预期。
+const CRYSTOOLS_SELECTOR = ".crystools-monitors-container, .crystools-root, #crystools-monitor-container";
+
+function mountTopbar(group) {
+  const crystools = document.querySelector(CRYSTOOLS_SELECTOR);
+  const beforeCrystools = crystools?.closest(".comfyui-button-group") || crystools;
+  if (beforeCrystools?.isConnected) {
+    beforeCrystools.before(group);
+    return true;
+  }
+  // 官方设置按钮组是顶栏最右侧的稳定锚点，Crystools 也用它。
+  const settingsGroup = app.menu?.settingsGroup?.element;
+  if (settingsGroup?.isConnected) {
+    settingsGroup.before(group);
+    return true;
+  }
+  const menu = document.querySelector(".comfyui-menu-right, .comfyui-menu");
+  if (menu) {
+    menu.append(group);
+    return true;
+  }
+  return false;
+}
+
+function buildTopbar() {
+  topbar = document.createElement("div");
+  topbar.id = "cbo-topbar";
+  topbar.className = "comfyui-button-group";
+  topbar.innerHTML = `
+    <span class="cbo-topbar-title">Batch Orchestrator</span>
+    <span id="cbo-status" class="cbo-status">尚未读取画布</span>
+    <button id="cbo-refresh" type="button" aria-label="刷新当前画布" title="刷新当前画布">⟳</button>
+    <button id="cbo-settings-button" type="button" aria-label="打开设置" title="设置">⚙</button>
+    <button id="cbo-toggle" type="button" aria-expanded="false" aria-controls="cbo-panel" aria-label="展开面板" title="展开面板">⌄</button>`;
+
+  if (mountTopbar(topbar)) return;
+  // 顶栏还没渲染（Vue 前端异步挂载）就等一次，仍然失败则退回右上角悬浮。
+  const observer = new MutationObserver(() => {
+    if (!mountTopbar(topbar)) return;
+    observer.disconnect();
+    positionPanel();
+  });
+  observer.observe(document.body, { childList: true, subtree: true });
+  setTimeout(() => {
+    observer.disconnect();
+    if (!topbar.isConnected) {
+      topbar.classList.add("cbo-topbar-detached");
+      document.body.append(topbar);
+    }
+  }, 5000);
+}
+
 function buildPanel() {
   if (document.getElementById("cbo-panel")) return document.getElementById("cbo-panel");
   const element = document.createElement("section");
   element.id = "cbo-panel";
-  element.className = "closed";
+  element.hidden = true;
   element.innerHTML = `
-    <header class="cbo-header">
-      <div><strong>Batch Orchestrator</strong><span id="cbo-status" class="cbo-status">尚未读取画布</span></div>
-      <div class="cbo-header-actions"><button id="cbo-refresh" type="button">刷新当前画布</button><button id="cbo-settings-button" type="button" aria-label="打开设置" title="设置">⚙</button><button id="cbo-toggle" type="button" aria-expanded="false" aria-controls="cbo-body" aria-label="展开面板" title="展开面板">⌄</button></div>
-    </header>
     <div class="cbo-body">
       <div id="cbo-summary" class="cbo-summary">尚未读取画布</div>
       <label>UNET 加载器<div class="cbo-node-control"><select id="cbo-unet-node"></select><button id="cbo-unet-locate" class="cbo-locate" type="button" aria-label="定位 UNET 加载器">定位</button></div></label>
@@ -1583,7 +1561,6 @@ function buildPanel() {
     <dialog id="cbo-settings-dialog" class="cbo-dialog" aria-labelledby="cbo-settings-title">
       <div class="cbo-dialog-header"><strong id="cbo-settings-title">设置</strong><span class="cbo-settings-hint">只保存在当前浏览器</span><button id="cbo-settings-close" type="button" aria-label="关闭设置">关闭</button></div>
       <section class="cbo-manager-section">
-        <label>面板模式<select id="cbo-setting-panel-mode"><option value="fixed">固定（右上角）</option><option value="floating">浮动（可拖动）</option></select></label>
         <label class="cbo-check-row"><input id="cbo-setting-lora-enabled" type="checkbox"><span>启用 LoRA 维度（关闭后隐藏 LoRA 选择，不参与组合）</span></label>
         <label>最大任务数<input id="cbo-setting-max-jobs" type="number" min="1" step="1"></label>
         <label>预览任务数<input id="cbo-setting-preview-limit" type="number" min="1" max="50" step="1"></label>
@@ -1596,7 +1573,7 @@ function buildPanel() {
         <input id="cbo-library-import" type="file" accept="application/json,.json">
         <button id="cbo-library-export" type="button">导出变量库 JSON</button>
       </section>
-      <div class="cbo-settings-actions"><button id="cbo-reset-position" type="button">重置位置</button><button id="cbo-save-settings" class="primary" type="button">保存设置</button></div>
+      <div class="cbo-settings-actions"><button id="cbo-save-settings" class="primary" type="button">保存设置</button></div>
     </dialog>
     <dialog id="cbo-variable-manager" class="cbo-dialog" aria-labelledby="cbo-variable-manager-title">
       <div class="cbo-dialog-header"><strong id="cbo-variable-manager-title">变量库</strong><button id="cbo-library-close" type="button" aria-label="关闭变量库">关闭</button></div>
@@ -1636,25 +1613,15 @@ function buildPanel() {
       </section>
     </dialog>`;
   document.body.append(element);
+  // 弹窗必须挂在 body 上：面板收起时是 hidden，showModal() 在 display:none 的祖先里不会显示。
+  element.querySelectorAll("dialog").forEach((dialog) => document.body.append(dialog));
+  buildTopbar();
 
   updateSettingsForm();
   applyLoraVisibility();
   renderLibrary();
-  applyPanelPosition();
-  installPanelDrag(element);
 
-  byId("cbo-toggle").addEventListener("click", () => {
-    const closed = element.classList.toggle("closed");
-    const toggle = byId("cbo-toggle");
-    toggle.textContent = closed ? "⌄" : "⌃";
-    toggle.setAttribute("aria-expanded", String(!closed));
-    toggle.setAttribute("aria-label", closed ? "展开面板" : "收起面板");
-    toggle.title = closed ? "展开面板" : "收起面板";
-    // 折叠态宽度是收缩的，展开后要按新尺寸重新夹一次，否则会顶出屏幕右边。
-    if (!closed && state.settings.panelMode === "floating" && state.settings.position) {
-      state.settings.position = setPanelPosition(state.settings.position);
-    }
-  });
+  byId("cbo-toggle").addEventListener("click", () => setPanelOpen(panel.hidden));
   byId("cbo-settings-button").addEventListener("click", () => {
     updateSettingsForm();
     openDialog("cbo-settings-dialog");
@@ -1666,7 +1633,6 @@ function buildPanel() {
   });
   byId("cbo-template-close").addEventListener("click", () => byId("cbo-template-manager").close());
   byId("cbo-variable-set-save").addEventListener("click", saveVariableSet);
-  byId("cbo-reset-position").addEventListener("click", resetPanelPosition);
   byId("cbo-save-settings").addEventListener("click", saveSettingsFromForm);
   byId("cbo-refresh").addEventListener("click", refresh);
   byId("cbo-submit").addEventListener("click", submit);
@@ -1714,10 +1680,16 @@ function buildPanel() {
   ["cbo-models", "cbo-loras"].forEach((id) => {
     byId(id).addEventListener("change", updatePreview);
   });
-  window.addEventListener("resize", () => {
-    if (panel && state.settings.panelMode === "floating") {
-      state.settings.position = setPanelPosition(state.settings.position || defaultFloatingPosition());
-    }
+  window.addEventListener("resize", positionPanel);
+  // 点面板或顶栏以外的地方就收起，和官方任务队列浮层一致。
+  document.addEventListener("pointerdown", (event) => {
+    if (panel.hidden) return;
+    if (panel.contains(event.target) || topbar?.contains(event.target)) return;
+    if (event.target.closest?.("dialog")) return;
+    setPanelOpen(false);
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !panel.hidden && !document.querySelector("dialog[open]")) setPanelOpen(false);
   });
   return element;
 }
@@ -1727,7 +1699,6 @@ app.registerExtension({
   async setup() {
     installStyles();
     panel = buildPanel();
-    applyPanelPosition();
     await loadLibraryState();
     await refresh();
   },

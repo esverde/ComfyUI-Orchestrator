@@ -1,4 +1,6 @@
-#cbo-panel {
+#cbo-topbar,
+#cbo-panel,
+.cbo-dialog {
   --cbo-fg: var(--fg-color, #e8edf2);
   --cbo-muted: var(--descrip-text, #aeb9c4);
   --cbo-bg: var(--comfy-menu-bg, #20252b);
@@ -12,57 +14,72 @@
   --cbo-accent: var(--content-bg, #256eaa);
   --cbo-focus: var(--content-hover-bg, #55a9e6);
   --cbo-success: var(--success-text, #7ddf9a);
+  font: 13px/1.35 system-ui, sans-serif;
+}
+
+/* 顶栏控件组：贴合 ComfyUI 自带 .comfyui-button-group 的观感 */
+#cbo-topbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px;
+  color: var(--cbo-fg);
+}
+
+#cbo-topbar.cbo-topbar-detached {
   position: fixed;
   z-index: 10000;
-  top: 64px;
+  top: 8px;
   right: 16px;
+  background: var(--cbo-bg);
+  border: 1px solid var(--cbo-border);
+  border-radius: 6px;
+}
+
+.cbo-topbar-title { font-weight: 600; white-space: nowrap; }
+
+#cbo-topbar button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  height: 26px;
+  padding: 0 6px;
+  color: var(--cbo-fg);
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 15px;
+  line-height: 1;
+}
+
+#cbo-topbar button:hover { background: var(--cbo-hover); color: var(--cbo-hover-fg); }
+#cbo-topbar button:disabled { cursor: wait; opacity: .55; }
+
+/* 单一字形 + 旋转，避免 ⌄/⌃ 两个字形度量不同导致的跳动 */
+#cbo-toggle { transition: transform .15s ease; }
+#cbo-toggle.cbo-open { transform: rotate(180deg); }
+
+/* 锚定在顶栏按钮下方的浮层，位置由 JS 计算 */
+#cbo-panel {
+  position: fixed;
+  z-index: 10000;
   width: 370px;
-  max-height: calc(100vh - 80px);
   overflow: hidden;
   color: var(--cbo-fg);
   background: var(--cbo-bg);
   border: 1px solid var(--cbo-border);
   border-radius: 8px;
   box-shadow: 0 10px 35px #0009;
-  font: 13px/1.35 system-ui, sans-serif;
 }
 
-#cbo-panel.closed {
-  width: auto;
-  max-height: none;
-  border: 0;
-  background: transparent;
-  box-shadow: none;
-}
-
-#cbo-panel.closed .cbo-body,
-#cbo-panel.closed .cbo-status {
-  display: none;
-}
-
-#cbo-panel.cbo-floating .cbo-header { cursor: move; touch-action: none; }
-#cbo-panel.cbo-dragging,
-#cbo-panel.cbo-dragging * { user-select: none; }
-#cbo-panel.cbo-dragging .cbo-header { cursor: grabbing; }
-
-.cbo-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 9px 10px;
-  background: var(--cbo-header-bg);
-  border-bottom: 1px solid var(--cbo-border);
-}
-
-.cbo-header strong {
-  display: block;
-  font-size: 14px;
-}
+#cbo-panel[hidden] { display: none; }
 
 .cbo-status {
   display: block;
-  max-width: 220px;
+  max-width: 200px;
   overflow: hidden;
   color: var(--cbo-muted);
   font-size: 11px;
@@ -73,13 +90,8 @@
 .cbo-status.ok { color: var(--cbo-success); }
 .cbo-status.error { color: var(--error-text, #ff8989); }
 
-.cbo-header-actions,
-.cbo-actions {
-  display: flex;
-  gap: 6px;
-}
+.cbo-actions { display: flex; gap: 6px; }
 
-.cbo-header button,
 .cbo-actions button {
   padding: 5px 8px;
   color: var(--cbo-fg);
@@ -89,18 +101,15 @@
   cursor: pointer;
 }
 
-.cbo-header button:hover,
 .cbo-actions button:hover,
 .cbo-settings-actions button:hover { background: var(--cbo-hover); color: var(--cbo-hover-fg); }
-.cbo-header button:disabled,
 .cbo-actions button:disabled,
 .cbo-settings-actions button:disabled { cursor: wait; opacity: .55; }
-.cbo-header #cbo-toggle { min-width: 28px; padding: 3px 7px; font-size: 16px; line-height: 1; }
 .cbo-actions .primary,
 .cbo-settings-actions .primary { flex: 1; background: var(--cbo-accent); border-color: var(--cbo-border); }
 
 .cbo-body {
-  max-height: calc(100vh - 130px);
+  /* 高度由 positionPanel() 按视口剩余空间设定 */
   overflow: auto;
   padding: 10px;
 }
@@ -164,6 +173,8 @@
 }
 .cbo-tree-toggle:hover,
 .cbo-tree-toggle:focus-visible { color: var(--cbo-fg); background: var(--cbo-hover); }
+.cbo-tree-toggle { transition: transform .15s ease; }
+.cbo-tree-toggle.cbo-open { transform: rotate(90deg); }
 .cbo-tree-spacer { flex: 0 0 18px; width: 18px; }
 .cbo-tree-label {
   display: flex !important;
