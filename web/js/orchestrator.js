@@ -975,9 +975,19 @@ function renderOutputTemplateSettings() {
   });
 }
 
+// 若 ComfyUI 给插入的元素套了包裹层，视觉上的圆角框就不是 topbar 自身，
+// 上溯到顶栏的直接子元素才能拿到真正的左边缘。
+function topbarBox() {
+  const menu = topbarContainer();
+  if (!menu || !menu.contains(topbar)) return topbar;
+  let node = topbar;
+  while (node.parentElement !== menu) node = node.parentElement;
+  return node;
+}
+
 function positionPanel() {
   if (!panel || panel.hidden || !topbar) return;
-  const anchor = topbar.getBoundingClientRect();
+  const anchor = topbarBox().getBoundingClientRect();
   const width = panel.offsetWidth || 370;
   const left = Math.min(Math.max(8, anchor.left), Math.max(8, window.innerWidth - width - 8));
   panel.style.left = `${Math.round(left)}px`;
