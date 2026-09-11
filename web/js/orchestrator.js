@@ -83,7 +83,9 @@ let panel;
 let topbar;
 
 function byId(id) {
-  return document.getElementById(id);
+  // 顶栏可能还在等 ComfyUI 渲染完才挂载，这段时间它不在文档里，
+  // getElementById 找不到其中的控件——回退到元素自身查找，否则绑不上监听器。
+  return document.getElementById(id) || topbar?.querySelector(`#${id}`) || null;
 }
 
 function setStatus(message, kind = "") {

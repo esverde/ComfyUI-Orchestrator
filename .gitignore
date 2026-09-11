@@ -1,6 +1,13 @@
 .codegraph
 /docs/
 
+# 截图 / 临时图片
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.webp
+
 # AI Client
 GEMINI.md
 AGENTS.md
