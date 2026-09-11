@@ -98,10 +98,8 @@ function notify(detail, severity = "error") {
   });
 }
 
-const SEVERITY = { ok: "success", error: "error" };
-
-function setStatus(message, kind = "") {
-  notify(message, SEVERITY[kind] || "info");
+function setStatus(message, kind = "ok") {
+  notify(message, kind === "error" ? "error" : "success");
 }
 
 function setFieldMessage(message, kind = "") {
@@ -1312,7 +1310,6 @@ function updatePreview(announce = false) {
 async function refresh() {
   const refreshButton = byId("cbo-refresh");
   refreshButton.disabled = true;
-  setStatus("正在读取当前画布……");
   try {
     state.prompt = await currentPrompt();
     state.targets = discoverTargets(state.prompt, graphNodes());
@@ -1490,79 +1487,34 @@ const CHEVRON = `<svg class="cbo-chevron" viewBox="0 0 16 16" width="13" height=
 
 // 新版前端会保留一个 display:none 的旧版 .comfyui-menu，光看 isConnected
 // 会把「插进了隐藏容器」误判成挂载成功，所以一律以实际可见为准。
-function isVisible(element) {
-  const rect = element.getBoundingClientRect();
-  return rect.width > 0 && rect.height > 0;
-}
-
-function crystoolsAnchor() {
-  const crystools = document.querySelector(CRYSTOOLS_SELECTOR);
-  if (!crystools || crystools.contains(topbar)) return null;
-  return crystools.closest(".comfyui-button-group") || crystools;
-}
-
-// Crystools 可能比我们晚挂载，那时我们已经落在它右边了，需要复位。
-function pinLeftOfCrystools() {
-  const anchor = crystoolsAnchor();
-  if (!anchor?.isConnected || anchor.previousElementSibling === topbar) return false;
+// 只插入一次，之后绝不再移动——反复插拔正是之前顶栏闪烁的原因。
+// 插在官方设置按钮组之前：Crystools 也挂在这个位置，先到先得，
+// 因此等它就位后再插，我们自然落在它右边、运行控件左边。
+function mountTopbar() {
+  const anchor = app.menu?.settingsGroup?.element;
+  if (!anchor?.isConnected) return false;
   anchor.before(topbar);
+  positionPanel();
   return true;
-}
-
-function topbarAnchors() {
-  return [
-    crystoolsAnchor(),
-    app.menu?.settingsGroup?.element,
-    document.querySelector(".comfyui-menu-right"),
-  ].filter((element) => element?.isConnected);
-}
-
-function mountTopbar(group) {
-  for (const anchor of topbarAnchors()) {
-    anchor.before(group);
-    if (isVisible(group)) return true;
-    group.remove();
-  }
-  return false;
-}
-
-function detachTopbar(group) {
-  group.classList.add("cbo-topbar-detached");
-  document.body.append(group);
-  console.warn("[Batch Orchestrator] 未能挂载到 ComfyUI 顶栏，已退回右上角悬浮显示。");
 }
 
 function buildTopbar() {
   topbar = document.createElement("div");
   topbar.id = "cbo-topbar";
   topbar.className = "comfyui-button-group";
-  // 状态文字改在面板内显示，顶栏只留标题和三个图标按钮。
   topbar.innerHTML = `
     <span class="cbo-topbar-title" title="Batch Orchestrator">Batch</span>
     <button id="cbo-refresh" type="button" aria-label="刷新当前画布" title="刷新当前画布">⟳</button>
     <button id="cbo-settings-button" type="button" aria-label="打开设置" title="设置">⚙</button>
     <button id="cbo-toggle" type="button" aria-expanded="false" aria-controls="cbo-panel" aria-label="展开面板" title="展开面板">${CHEVRON}</button>`;
 
-  const mounted = mountTopbar(topbar);
-  // 顶栏是 Vue 异步挂载的，Crystools 也可能比我们晚到；持续观察直到两者都就位。
-  const watch = () => observer.observe(document.body, { childList: true, subtree: true });
-  const observer = new MutationObserver(() => {
-    // 试挂载本身会改 DOM，不先断开会把自己的插入/移除又喂回来，空转到超时。
-    observer.disconnect();
-    if (topbar.isConnected && isVisible(topbar)) {
-      if (pinLeftOfCrystools()) positionPanel();
-    } else if (mountTopbar(topbar)) {
-      positionPanel();
-    }
-    watch();
-  });
-  watch();
-  // 给 Crystools 留出加载时间后停止观察，避免长期占用 DOM 变更回调。
-  setTimeout(() => observer.disconnect(), 15000);
-  if (mounted) return;
-  setTimeout(() => {
-    if (!topbar.isConnected || !isVisible(topbar)) detachTopbar(topbar);
-  }, 5000);
+  // 顶栏是 Vue 异步渲染的，Crystools 也可能晚到；给它一段宽限期再插入。
+  const deadline = Date.now() + 3000;
+  const timer = setInterval(() => {
+    const crystoolsReady = document.querySelector(CRYSTOOLS_SELECTOR);
+    if (!crystoolsReady && Date.now() < deadline) return;
+    if (mountTopbar() || Date.now() >= deadline + 7000) clearInterval(timer);
+  }, 150);
 }
 
 function buildPanel() {
