@@ -109,13 +109,39 @@ function setFieldMessage(message, kind = "") {
   element.className = `cbo-preview ${kind}`;
 }
 
-function librarySnapshot() {
-  return {
-    variables: state.library.variables,
-    variableSets: state.library.variableSets,
-    templates: state.library.templates,
-    templateHistory: state.library.templateHistory,
-  };
+function button(text, onClick, { className = "", title = "", ariaLabel = "" } = {}) {
+  const element = document.createElement("button");
+  element.type = "button";
+  element.textContent = text;
+  if (className) element.className = className;
+  if (title) element.title = title;
+  if (ariaLabel) element.setAttribute("aria-label", ariaLabel);
+  element.addEventListener("click", onClick);
+  return element;
+}
+
+function emptyNote(container, text, className = "cbo-library-empty") {
+  const note = document.createElement("div");
+  note.className = className;
+  note.textContent = text;
+  container.append(note);
+}
+
+function libraryRow(title, meta, buttons) {
+  const row = document.createElement("div");
+  row.className = "cbo-library-record";
+  const main = document.createElement("div");
+  main.className = "cbo-library-record-main";
+  const heading = document.createElement("strong");
+  heading.textContent = title;
+  const detail = document.createElement("span");
+  detail.textContent = meta;
+  main.append(heading, detail);
+  const actions = document.createElement("div");
+  actions.className = "cbo-library-record-actions";
+  actions.append(...buttons);
+  row.append(main, actions);
+  return row;
 }
 
 function cloneVariableRecord(record) {
@@ -143,46 +169,24 @@ function renderVariableRecords() {
   if (!container) return;
   container.replaceChildren();
   if (!state.library.ready) {
-    const empty = document.createElement("div");
-    empty.className = "cbo-library-empty";
-    empty.textContent = "IndexedDB 不可用，变量库管理暂不可用；快速输入仍可使用。";
-    container.append(empty);
+    emptyNote(container, "IndexedDB 不可用，变量库管理暂不可用；快速输入仍可使用。");
     return;
   }
   const records = filteredVariableRecords();
   if (!records.length) {
-    const empty = document.createElement("div");
-    empty.className = "cbo-library-empty";
-    empty.textContent = "没有匹配的变量值。";
-    container.append(empty);
+    emptyNote(container, "没有匹配的变量值。");
     return;
   }
   for (const record of records) {
-    const row = document.createElement("div");
-    row.className = "cbo-library-record";
-    const main = document.createElement("div");
-    main.className = "cbo-library-record-main";
-    const title = document.createElement("strong");
-    title.textContent = `${record.key} · ${record.text}`;
-    const meta = document.createElement("span");
-    meta.textContent = [record.label && `文件名：${record.label}`, record.tags.length && `标签：${record.tags.join("、")}`, record.note]
-      .filter(Boolean)
-      .join("；");
-    main.append(title, meta);
-    const actions = document.createElement("div");
-    actions.className = "cbo-library-record-actions";
-    const edit = document.createElement("button");
-    edit.type = "button";
-    edit.textContent = "编辑";
-    edit.addEventListener("click", () => openVariableEditor(record));
-    const remove = document.createElement("button");
-    remove.type = "button";
-    remove.className = "danger";
-    remove.textContent = "删除";
-    remove.addEventListener("click", () => removeVariableRecord(record.id));
-    actions.append(edit, remove);
-    row.append(main, actions);
-    container.append(row);
+    const meta = [
+      record.label && `文件名：${record.label}`,
+      record.tags.length && `标签：${record.tags.join("、")}`,
+      record.note,
+    ].filter(Boolean).join("；");
+    container.append(libraryRow(`${record.key} · ${record.text}`, meta, [
+      button("编辑", () => openVariableEditor(record)),
+      button("删除", () => removeVariableRecord(record.id), { className: "danger" }),
+    ]));
   }
 }
 
@@ -199,8 +203,7 @@ function openVariableEditor(record = null) {
 
 function clearVariableEditor() {
   state.variableEditorId = "";
-  openVariableEditor();
-  byId("cbo-library-key").value = "";
+  for (const field of ["key", "text", "label", "tags", "note"]) byId(`cbo-library-${field}`).value = "";
   byId("cbo-library-save").textContent = "添加变量值";
 }
 
@@ -262,10 +265,7 @@ function addSlotValue(slot, text) {
 function renderSlotValues(container, slot) {
   container.replaceChildren();
   if (!slot.values.length) {
-    const hint = document.createElement("span");
-    hint.className = "cbo-variable-hint";
-    hint.textContent = "还没有值。在上方输入后回车添加。";
-    container.append(hint);
+    emptyNote(container, "还没有值。在上方输入后回车添加。", "cbo-variable-hint");
     return;
   }
   slot.values.forEach((value, valueIndex) => {
@@ -275,17 +275,11 @@ function renderSlotValues(container, slot) {
     text.className = "cbo-variable-chip-text";
     text.textContent = value.label ? `${value.text} [${value.label}]` : value.text;
     text.title = value.text;
-    const remove = document.createElement("button");
-    remove.type = "button";
-    remove.className = "cbo-variable-chip-remove";
-    remove.textContent = "×";
-    remove.setAttribute("aria-label", `移除 ${value.text}`);
-    remove.addEventListener("click", () => {
+    chip.append(text, button("×", () => {
       slot.values.splice(valueIndex, 1);
       renderVariableSlots();
       updatePreview();
-    });
-    chip.append(text, remove);
+    }, { className: "cbo-variable-chip-remove", ariaLabel: `移除 ${value.text}` }));
     container.append(chip);
   });
 }
@@ -320,28 +314,16 @@ function renderVariableSlots() {
     const count = document.createElement("span");
     count.className = "cbo-variable-slot-count";
     count.textContent = `${slot.values.length} 个值`;
-    const insert = document.createElement("button");
-    insert.type = "button";
-    insert.textContent = "插入";
-    insert.title = `把 {{${slot.key}}} 插入文本模板`;
-    insert.addEventListener("click", () => insertPlaceholder(slot.key));
-    const save = document.createElement("button");
-    save.type = "button";
-    save.textContent = "存入库";
-    save.title = "把这个变量的所有值保存到变量库";
-    save.addEventListener("click", () => saveSlotValuesToLibrary(slotIndex));
-    const remove = document.createElement("button");
-    remove.type = "button";
-    remove.className = "danger";
-    remove.textContent = "×";
-    remove.title = "删除这个变量";
-    remove.setAttribute("aria-label", `删除变量 ${slot.key || slotIndex + 1}`);
-    remove.addEventListener("click", () => {
+    const insert = button("插入", () => insertPlaceholder(slot.key),
+      { title: `把 {{${slot.key}}} 插入文本模板` });
+    const save = button("存入库", () => saveSlotValuesToLibrary(slotIndex),
+      { title: "把这个变量的所有值保存到变量库" });
+    const remove = button("×", () => {
       state.variableSlots.splice(slotIndex, 1);
       if (!state.variableSlots.length) state.variableSlots.push({ key: "subject", values: [] });
       renderVariableSlots();
       updatePreview();
-    });
+    }, { className: "danger", title: "删除这个变量", ariaLabel: `删除变量 ${slot.key || slotIndex + 1}` });
     header.append(key, count, insert, save, remove);
 
     // 原生 datalist：输入时直接联想该变量名在库里已有的值，省掉一个自建选择器。
@@ -445,7 +427,7 @@ async function saveSlotValuesToLibrary(slotIndex) {
       nextVariables.push(record);
       saved.push(cloneVariableRecord(record));
     }
-    const next = normalizeLibraryData({ ...librarySnapshot(), variables: nextVariables }, now);
+    const next = normalizeLibraryData({ ...state.library, variables: nextVariables }, now);
     await replaceLibraryData(next);
     state.library = { ...next, ready: true };
     slot.values = saved;
@@ -527,116 +509,65 @@ function renderVariableSets() {
   if (!container) return;
   container.replaceChildren();
   if (!state.library.ready) {
-    const empty = document.createElement("div");
-    empty.className = "cbo-library-empty";
-    empty.textContent = "IndexedDB 不可用，组合保存暂不可用。";
-    container.append(empty);
+    emptyNote(container, "IndexedDB 不可用，组合保存暂不可用。");
     return;
   }
   if (!state.library.variableSets.length) {
-    const empty = document.createElement("div");
-    empty.className = "cbo-library-empty";
-    empty.textContent = "还没有保存的组合。在主面板配好变量后点「保存组合」。";
-    container.append(empty);
+    emptyNote(container, "还没有保存的组合。在主面板配好变量后点「保存组合」。");
     return;
   }
   for (const record of state.library.variableSets) {
-    const row = document.createElement("div");
-    row.className = "cbo-library-record";
-    const main = document.createElement("div");
-    main.className = "cbo-library-record-main";
-    const title = document.createElement("strong");
-    title.textContent = record.name;
-    const meta = document.createElement("span");
     const counts = record.slots.map((slot) => `${slot.key}（${slot.values.length}）`);
-    meta.textContent = `${counts.join(" × ")} = ${countJobs(...record.slots.map((slot) => slot.values))} 种组合`;
-    main.append(title, meta);
-    const actions = document.createElement("div");
-    actions.className = "cbo-library-record-actions";
-    const load = document.createElement("button");
-    load.type = "button";
-    load.textContent = "载入";
-    load.addEventListener("click", () => loadVariableSet(record));
-    const remove = document.createElement("button");
-    remove.type = "button";
-    remove.className = "danger";
-    remove.textContent = "删除";
-    remove.addEventListener("click", () => removeVariableSet(record.id));
-    actions.append(load, remove);
-    row.append(main, actions);
+    const total = countJobs(...record.slots.map((slot) => slot.values));
+    container.append(libraryRow(record.name, `${counts.join(" × ")} = ${total} 种组合`, [
+      button("载入", () => loadVariableSet(record)),
+      button("删除", () => removeVariableSet(record.id), { className: "danger" }),
+    ]));
+  }
+}
+
+function renderTemplates() {
+  const container = byId("cbo-template-records");
+  if (!container) return;
+  container.replaceChildren();
+  if (!state.library.ready) {
+    emptyNote(container, "IndexedDB 不可用，模板保存和历史暂不可用。");
+    return;
+  }
+  if (!state.library.templates.length) {
+    emptyNote(container, "还没有已保存模板。");
+    return;
+  }
+  for (const record of state.library.templates) {
+    container.append(libraryRow(record.name, record.body, [
+      button("加载", () => loadTemplate(record)),
+      button("编辑", () => openTemplateEditor(record)),
+      button("删除", () => removeTemplate(record.id), { className: "danger" }),
+    ]));
+  }
+}
+
+function renderTemplateHistory() {
+  const container = byId("cbo-template-history");
+  if (!container) return;
+  container.replaceChildren();
+  if (!state.library.templateHistory.length) {
+    emptyNote(container, "还没有模板使用历史。");
+    return;
+  }
+  for (const record of state.library.templateHistory) {
+    const row = document.createElement("div");
+    row.className = "cbo-library-history-row";
+    const text = document.createElement("span");
+    text.textContent = `${record.name}：${record.body}`;
+    row.append(text, button("加载", () => loadTemplate(record)));
     container.append(row);
   }
 }
 
 function renderTemplateRecords() {
-  const recordsContainer = byId("cbo-template-records");
-  const historyContainer = byId("cbo-template-history");
-  if (recordsContainer) {
-    recordsContainer.replaceChildren();
-    if (!state.library.ready) {
-      const empty = document.createElement("div");
-      empty.className = "cbo-library-empty";
-      empty.textContent = "IndexedDB 不可用，模板保存和历史暂不可用。";
-      recordsContainer.append(empty);
-    } else if (!state.library.templates.length) {
-      const empty = document.createElement("div");
-      empty.className = "cbo-library-empty";
-      empty.textContent = "还没有已保存模板。";
-      recordsContainer.append(empty);
-    } else {
-      for (const record of state.library.templates) {
-        const row = document.createElement("div");
-        row.className = "cbo-library-record";
-        const main = document.createElement("div");
-        main.className = "cbo-library-record-main";
-        const title = document.createElement("strong");
-        title.textContent = record.name;
-        const body = document.createElement("span");
-        body.textContent = record.body;
-        main.append(title, body);
-        const actions = document.createElement("div");
-        actions.className = "cbo-library-record-actions";
-        const load = document.createElement("button");
-        load.type = "button";
-        load.textContent = "加载";
-        load.addEventListener("click", () => loadTemplate(record));
-        const edit = document.createElement("button");
-        edit.type = "button";
-        edit.textContent = "编辑";
-        edit.addEventListener("click", () => openTemplateEditor(record));
-        const remove = document.createElement("button");
-        remove.type = "button";
-        remove.className = "danger";
-        remove.textContent = "删除";
-        remove.addEventListener("click", () => removeTemplate(record.id));
-        actions.append(load, edit, remove);
-        row.append(main, actions);
-        recordsContainer.append(row);
-      }
-    }
-  }
-  if (historyContainer) {
-    historyContainer.replaceChildren();
-    if (!state.library.templateHistory.length) {
-      const empty = document.createElement("div");
-      empty.className = "cbo-library-empty";
-      empty.textContent = "还没有模板使用历史。";
-      historyContainer.append(empty);
-    } else {
-      for (const record of state.library.templateHistory) {
-        const row = document.createElement("div");
-        row.className = "cbo-library-history-row";
-        const text = document.createElement("span");
-        text.textContent = `${record.name}：${record.body}`;
-        const load = document.createElement("button");
-        load.type = "button";
-        load.textContent = "加载";
-        load.addEventListener("click", () => loadTemplate(record));
-        row.append(text, load);
-        historyContainer.append(row);
-      }
-    }
-  }
+  renderTemplates();
+  renderTemplateHistory();
 }
 
 function openTemplateEditor(record = null) {
@@ -725,7 +656,7 @@ async function recordTemplateUse(body) {
         lastUsedAt: now,
       },
     ] }, now).templateHistory;
-    const next = normalizeLibraryData({ ...librarySnapshot(), templateHistory: history }, now);
+    const next = normalizeLibraryData({ ...state.library, templateHistory: history }, now);
     await replaceLibraryData(next);
     state.library = { ...next, ready: true };
     renderTemplateRecords();
@@ -846,15 +777,16 @@ async function listOptions(nodeType, inputName, currentValue) {
   return currentValue ? [currentValue] : [];
 }
 
-function fillSelect(select, items, selected = []) {
+// 三处目标节点下拉的选项文案完全一致，label 在这里拼即可。
+function fillSelect(select, targets) {
   select.replaceChildren();
-  for (const { id, label } of items) {
+  targets.forEach((target, index) => {
     const option = document.createElement("option");
-    option.value = String(id);
-    option.textContent = label;
-    option.selected = selected.includes(option.value);
+    option.value = String(target.id);
+    option.textContent = `${target.title} (#${target.id})`;
+    option.selected = index === 0;
     select.append(option);
-  }
+  });
 }
 
 function selectedValues(container) {
@@ -943,10 +875,7 @@ function renderValueTree(container, values, selectedValuesList, emptyLabel, root
   container.setAttribute("role", "tree");
   const tree = buildModelTree(values);
   if (!tree.length) {
-    const empty = document.createElement("div");
-    empty.className = "cbo-tree-empty";
-    empty.textContent = emptyLabel;
-    container.append(empty);
+    emptyNote(container, emptyLabel, "cbo-tree-empty");
     return;
   }
   appendTreeNode(
@@ -1030,10 +959,7 @@ function renderOutputTemplateSettings() {
   if (!container) return;
   container.replaceChildren();
   if (!state.targets.outputs.length) {
-    const empty = document.createElement("div");
-    empty.className = "cbo-settings-hint";
-    empty.textContent = "刷新画布后可为每个输出节点设置单独模板。";
-    container.append(empty);
+    emptyNote(container, "刷新画布后可为每个输出节点设置单独模板。", "cbo-settings-hint");
     return;
   }
   state.targets.outputs.forEach((target) => {
@@ -1143,26 +1069,10 @@ function updateSummary() {
 }
 
 function setTargetControls() {
-  const unetSelect = byId("cbo-unet-node");
-  const loraSelect = byId("cbo-lora-node");
-  const textSelect = byId("cbo-text-node");
   const outputContainer = byId("cbo-output-nodes");
-
-  fillSelect(
-    unetSelect,
-    state.targets.unet.map((target) => ({ id: target.id, label: `${target.title} (#${target.id})` })),
-    state.targets.unet[0] ? [state.targets.unet[0].id] : [],
-  );
-  fillSelect(
-    loraSelect,
-    state.targets.lora.map((target) => ({ id: target.id, label: `${target.title} (#${target.id})` })),
-    state.targets.lora[0] ? [state.targets.lora[0].id] : [],
-  );
-  fillSelect(
-    textSelect,
-    state.targets.text.map((target) => ({ id: target.id, label: `${target.title} (#${target.id})` })),
-    state.targets.text[0] ? [state.targets.text[0].id] : [],
-  );
+  fillSelect(byId("cbo-unet-node"), state.targets.unet);
+  fillSelect(byId("cbo-lora-node"), state.targets.lora);
+  fillSelect(byId("cbo-text-node"), state.targets.text);
 
   Promise.all([refreshModelSelect(), refreshLoraSelect()])
     .then(updatePreview)
@@ -1185,12 +1095,7 @@ function setTargetControls() {
     const text = document.createElement("span");
     text.textContent = `${target.title} (#${target.id})`;
     label.append(checkbox, text);
-    const locate = document.createElement("button");
-    locate.type = "button";
-    locate.className = "cbo-locate";
-    locate.textContent = "定位";
-    locate.addEventListener("click", () => locateNode(target.id));
-    header.append(label, locate);
+    header.append(label, button("定位", () => locateNode(target.id), { className: "cbo-locate" }));
     const filename = document.createElement("input");
     filename.type = "text";
     filename.className = "cbo-output-template";
@@ -1263,9 +1168,7 @@ function collectConfig() {
 
 function sampleJobs(config) {
   const samples = [];
-  const iterator = expandJobs(state.prompt, {
-    ...config,
-  });
+  const iterator = expandJobs(state.prompt, config);
   while (samples.length < state.settings.previewLimit) {
     const next = iterator.next();
     if (next.done) break;
@@ -1281,7 +1184,7 @@ function updatePreview(announce = false) {
     const total = countJobs(config.models, config.loras, ...variableDimensions(config));
     const samples = sampleJobs(config);
     const hasLora = Boolean(config.loraId);
-    const hasMultipleVariables = Boolean(config.variables?.length && config.variables.length > 1);
+    const hasMultipleVariables = config.variables.length > 1;
     const lines = [
       `将提交 ${total} 个任务（${hasLora ? "模型 × LoRA × " : "模型 × "}${hasMultipleVariables ? "变量组合" : "文本值"}）`,
       ...samples.map((job) => [
@@ -1293,11 +1196,11 @@ function updatePreview(announce = false) {
     ];
     if (total > samples.length) lines.push(`……还有 ${total - samples.length} 个任务`);
     setFieldMessage(lines.join("\n"), "ok");
-    if (announce === true) setStatus(`预览已生成：共 ${total} 个任务，仅展示前 ${samples.length} 个`, "ok");
+    if (announce) setStatus(`预览已生成：共 ${total} 个任务，仅展示前 ${samples.length} 个`, "ok");
     return config;
   } catch (error) {
     setFieldMessage(error.message, "error");
-    if (announce === true) setStatus(`预览失败：${error.message}`, "error");
+    if (announce) setStatus(`预览失败：${error.message}`, "error");
     return false;
   }
 }
@@ -1360,8 +1263,8 @@ function renderTasks() {
     row.append(status, main);
     list.append(row);
   }
-  const submitted = state.tasks.filter((task) => task.status !== "failed").length;
   const failed = state.tasks.filter((task) => task.status === "failed").length;
+  const submitted = state.tasks.length - failed;
   byId("cbo-task-summary").textContent = state.tasks.length
     ? `已处理 ${state.tasks.length}；成功提交 ${submitted}；失败 ${failed}`
     : "尚未提交任务";
@@ -1418,9 +1321,7 @@ async function submit() {
     const config = collectConfig();
     const total = countJobs(config.models, config.loras, ...variableDimensions(config));
     if (!total) throw new Error("请至少选择一个模型、LoRA（如有）并提供一个文本值");
-    const iterator = expandJobs(state.prompt, {
-      ...config,
-    });
+    const iterator = expandJobs(state.prompt, config);
     const first = iterator.next();
     await recordTemplateUse(config.template);
     let processed = 0;

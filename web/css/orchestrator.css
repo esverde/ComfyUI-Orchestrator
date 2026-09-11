@@ -177,15 +177,12 @@
 .cbo-section-heading button { flex: 0 0 auto; padding: 4px 7px; color: var(--cbo-fg); background: var(--cbo-input-bg); border: 1px solid var(--cbo-border); border-radius: 4px; cursor: pointer; font: inherit; }
 .cbo-section-heading button:hover { background: var(--cbo-hover); color: var(--cbo-hover-fg); }
 
-.cbo-settings-heading,
 .cbo-settings-actions {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 6px;
 }
-.cbo-settings-heading { margin-bottom: 8px; }
-.cbo-settings-heading span,
 .cbo-settings-hint { color: var(--cbo-muted); font-size: 11px; }
 .cbo-settings-subheading { margin: 10px 0 5px; color: var(--cbo-fg); font-size: 11px; font-weight: 600; }
 .cbo-setting-output-row { margin-bottom: 6px !important; }
