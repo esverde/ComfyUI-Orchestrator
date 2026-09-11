@@ -435,11 +435,6 @@ async function saveSlotValuesToLibrary(slotIndex) {
   }
 }
 
-function openDialog(id) {
-  const dialog = byId(id);
-  if (dialog && !dialog.open) dialog.showModal();
-}
-
 async function saveVariableSet() {
   try {
     if (!state.library.ready) throw new Error("变量库不可用，无法保存组合");
@@ -977,8 +972,7 @@ function renderOutputTemplateSettings() {
 
 function positionPanel() {
   if (!panel || panel.hidden || !topbar) return;
-  // 按钮组的父级带 mx-2，比操作栏内缩 8px；对齐要以操作栏外边缘为准。
-  const anchor = (topbar.closest(".actionbar-container") || topbar).getBoundingClientRect();
+  const anchor = topbar.getBoundingClientRect();
   const width = panel.offsetWidth || 370;
   const left = Math.min(Math.max(8, anchor.left), Math.max(8, window.innerWidth - width - 8));
   panel.style.left = `${Math.round(left)}px`;
@@ -1510,7 +1504,8 @@ function buildPanel() {
   ]) {
     byId(opener).addEventListener("click", () => {
       beforeOpen?.();
-      openDialog(dialog);
+      const element = byId(dialog);
+      if (!element.open) element.showModal();
     });
   }
   byId("cbo-variable-set-save").addEventListener("click", saveVariableSet);

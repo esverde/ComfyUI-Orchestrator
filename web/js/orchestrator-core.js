@@ -68,13 +68,14 @@ export function discoverTargets(prompt, graphNodes = []) {
   const graphById = new Map(graphNodes.map((node) => [String(node.id), node]));
   const negativeIds = negativeTextIds(prompt);
   const entries = Object.entries(prompt || {});
+  const collect = (predicate) => entries
+    .filter(predicate)
+    .map(([id, node]) => target(id, node, graphById.get(id)));
   return {
-    unet: entries.filter(([, node]) => isUnetTarget(node)).map(([id, node]) => target(id, node, graphById.get(id))),
-    lora: entries.filter(([, node]) => isLoraTarget(node)).map(([id, node]) => target(id, node, graphById.get(id))),
-    text: entries
-      .filter(([id, node]) => isTextTarget(node) && !isNegativeTextTarget(id, graphById.get(id), negativeIds))
-      .map(([id, node]) => target(id, node, graphById.get(id))),
-    outputs: entries.filter(([, node]) => isOutputTarget(node)).map(([id, node]) => target(id, node, graphById.get(id))),
+    unet: collect(([, node]) => isUnetTarget(node)),
+    lora: collect(([, node]) => isLoraTarget(node)),
+    text: collect(([id, node]) => isTextTarget(node) && !isNegativeTextTarget(id, graphById.get(id), negativeIds)),
+    outputs: collect(([, node]) => isOutputTarget(node)),
   };
 }
 

@@ -6,10 +6,6 @@ const DB_NAME = "comfyui-batch-orchestrator-library";
 const STORE_NAMES = ["variables", "variableSets", "templates", "templateHistory"];
 const VARIABLE_KEY = /^\p{L}[\p{L}\p{N}_]*$/u;
 
-function makeId() {
-  return crypto.randomUUID();
-}
-
 function recordObject(record, label) {
   if (!record || typeof record !== "object" || Array.isArray(record)) {
     throw new Error(`${label}记录格式无效`);
@@ -48,7 +44,7 @@ function normalizeVariableRecord(value, now) {
   if (!text) throw new Error("变量文本不能为空");
   const createdAt = timestampField(record, "createdAt", now);
   return {
-    id: stringField(record, "id") || makeId(),
+    id: stringField(record, "id") || crypto.randomUUID(),
     key,
     text,
     label: stringField(record, "label").trim(),
@@ -82,7 +78,7 @@ function normalizeVariableSetRecord(value, now) {
   if (!slots.length) throw new Error("组合变量至少需要一个变量");
   const createdAt = timestampField(record, "createdAt", now);
   return {
-    id: stringField(record, "id") || makeId(),
+    id: stringField(record, "id") || crypto.randomUUID(),
     name,
     slots,
     createdAt,
@@ -98,7 +94,7 @@ function normalizeTemplateRecord(value, now) {
   if (!body.trim()) throw new Error("模板内容不能为空");
   const createdAt = timestampField(record, "createdAt", now);
   return {
-    id: stringField(record, "id") || makeId(),
+    id: stringField(record, "id") || crypto.randomUUID(),
     name,
     body,
     tags: normalizeTags(record.tags),
@@ -114,7 +110,7 @@ function normalizeHistoryRecord(value, now) {
   const body = stringField(record, "body");
   if (!name || !body.trim()) throw new Error("模板历史记录不能为空");
   return {
-    id: stringField(record, "id") || makeId(),
+    id: stringField(record, "id") || crypto.randomUUID(),
     name,
     body,
     lastUsedAt: timestampField(record, "lastUsedAt", now),
@@ -141,17 +137,17 @@ function normalizeHistory(records, now) {
     .slice(0, MAX_TEMPLATE_HISTORY);
 }
 
+function normalizeStore(source, name, normalize, now) {
+  return Array.isArray(source[name])
+    ? mergeById([], source[name].map((item) => normalize(item, now)), "updatedAt")
+    : [];
+}
+
 export function normalizeLibraryData(value = {}, now = Date.now()) {
   const source = recordObject(value, "变量库");
-  const variables = Array.isArray(source.variables)
-    ? mergeById([], source.variables.map((item) => normalizeVariableRecord(item, now)), "updatedAt")
-    : [];
-  const variableSets = Array.isArray(source.variableSets)
-    ? mergeById([], source.variableSets.map((item) => normalizeVariableSetRecord(item, now)), "updatedAt")
-    : [];
-  const templates = Array.isArray(source.templates)
-    ? mergeById([], source.templates.map((item) => normalizeTemplateRecord(item, now)), "updatedAt")
-    : [];
+  const variables = normalizeStore(source, "variables", normalizeVariableRecord, now);
+  const variableSets = normalizeStore(source, "variableSets", normalizeVariableSetRecord, now);
+  const templates = normalizeStore(source, "templates", normalizeTemplateRecord, now);
   const templateHistory = Array.isArray(source.templateHistory)
     ? normalizeHistory(source.templateHistory, now)
     : [];
@@ -226,19 +222,10 @@ export function serializeLibrary(value, now = Date.now()) {
   }, null, 2);
 }
 
-function assertStoreName(storeName) {
-  if (!STORE_NAMES.includes(storeName)) throw new Error(`未知变量库存储：${storeName}`);
-}
-
-function getIndexedDb() {
-  if (!globalThis.indexedDB) throw new Error("浏览器不支持本地变量库");
-  return globalThis.indexedDB;
-}
-
 function openDatabase() {
-  const indexedDb = getIndexedDb();
+  if (!globalThis.indexedDB) throw new Error("浏览器不支持本地变量库");
   return new Promise((resolve, reject) => {
-    const request = indexedDb.open(DB_NAME, LIBRARY_VERSION);
+    const request = globalThis.indexedDB.open(DB_NAME, LIBRARY_VERSION);
     request.onupgradeneeded = () => {
       for (const name of STORE_NAMES) {
         if (!request.result.objectStoreNames.contains(name)) request.result.createObjectStore(name, { keyPath: "id" });
@@ -276,7 +263,6 @@ function runTransaction(storeNames, mode, action) {
 }
 
 export function listLibraryRecords(storeName) {
-  assertStoreName(storeName);
   return runTransaction([storeName], "readonly", (transaction) => new Promise((resolve, reject) => {
     const request = transaction.objectStore(storeName).getAll();
     request.onsuccess = () => resolve(request.result || []);
@@ -285,7 +271,6 @@ export function listLibraryRecords(storeName) {
 }
 
 export function putLibraryRecord(storeName, record) {
-  assertStoreName(storeName);
   const data = normalizeLibraryData({ [storeName]: [record] });
   return runTransaction([storeName], "readwrite", (transaction) => {
     transaction.objectStore(storeName).put(data[storeName][0]);
@@ -293,7 +278,6 @@ export function putLibraryRecord(storeName, record) {
 }
 
 export function deleteLibraryRecord(storeName, id) {
-  assertStoreName(storeName);
   return runTransaction([storeName], "readwrite", (transaction) => {
     transaction.objectStore(storeName).delete(String(id));
   });
