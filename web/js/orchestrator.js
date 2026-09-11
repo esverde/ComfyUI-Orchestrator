@@ -1024,7 +1024,10 @@ function setPanelOpen(open) {
   toggle.setAttribute("aria-expanded", String(open));
   toggle.setAttribute("aria-label", open ? "收起面板" : "展开面板");
   toggle.title = open ? "收起面板" : "展开面板";
-  if (open) positionPanel();
+  if (!open) return;
+  positionPanel();
+  // 扩展 setup() 早于工作流载入画布，那时读取必然为空；改在首次展开时读取。
+  if (!state.prompt) refresh();
 }
 
 function applyLoraVisibility() {
@@ -1704,6 +1707,5 @@ app.registerExtension({
     installStyles();
     panel = buildPanel();
     await loadLibraryState();
-    await refresh();
   },
 });

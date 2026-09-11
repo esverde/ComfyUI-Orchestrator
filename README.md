@@ -45,13 +45,15 @@ Each job is a temporary in-memory copy of the API JSON. The extension does not c
 
 3. Restart ComfyUI.
 4. Refresh the browser and look for the `Batch` button group in the topbar.
-5. Click the refresh button `⟳` in that group after opening or switching workflows.
+5. Open the panel. It reads the canvas the first time it is expanded; click the refresh button `⟳` after switching workflows.
 
 ## Usage
 
 ### 1. Read the current canvas
 
-Click the refresh button `⟳` in the topbar `Batch` group. The panel only handles nodes that can be converted to an API workflow and are not disabled or bypassed.
+The panel reads the canvas automatically the first time it is expanded. Click the refresh button `⟳` in the topbar `Batch` group after switching or editing the workflow. The panel only handles nodes that can be converted to an API workflow and are not disabled or bypassed.
+
+Reading happens on first expansion rather than at extension load because ComfyUI restores the workflow into the graph after extension `setup()` runs — reading at load would always see an empty graph.
 
 ### 2. Select the UNET and models
 
