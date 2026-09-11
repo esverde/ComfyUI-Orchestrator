@@ -1,284 +1,10 @@
 # ComfyUI Batch Orchestrator
 
-ComfyUI 的本地批量任务编排扩展。它读取当前画布中的可执行工作流，让你选择多个 UNET 模型和 LoRA、批量替换一个或多个正面文本变量，并按“模型 × LoRA × 文本变量笛卡尔积”逐个提交任务。
+A local batch-job orchestration extension for ComfyUI. It reads the executable workflow on the current canvas, lets you select multiple UNET models and LoRAs, replaces one or more text variables with reusable values, and expands the combinations as a model × LoRA × text-slot Cartesian product.
 
-[中文](#chinese) · [English](#english)
-
-<a id="chinese"></a>
-
-<details open>
-<summary>中文</summary>
-
-## 概览
-
-这是一个运行在 ComfyUI 内部的前端扩展，不是独立的 Web 服务。插件会在 ComfyUI 顶部菜单栏插入一个 `Batch` 控件组，点击展开面板，提供：
-
-- 从当前画布读取可执行的 API 工作流。
-- 自动发现启用的 `UNETLoader`、`LoraLoaderModelOnly`、正面 `CLIPTextEncode` 和可命名的输出节点。
-- 从 `UNETLoader` 的节点定义读取可用模型，并支持多选。
-- 从 `LoraLoaderModelOnly` 的节点定义读取可用 LoRA，并支持按文件夹多选。
-- 使用 `{{变量名}}` 替换文本模板中的变量。
-- 对模型、LoRA 和文本值列表做笛卡尔积；没有 LoRA 节点时保持模型 × 文本值行为。
-- 在主面板直接添加任意多个变量，例如 `top × bottom × shoes`，并为每个变量值保存短文件名 label、标签和备注。
-- 把整组变量命名保存为“组合”，之后一键载入。
-- 在当前浏览器的 IndexedDB 中持久化变量库、组合、命名模板和最多 100 条模板历史。
-- 通过版本化 JSON 导入/导出变量库，支持在不同浏览器或不同 ComfyUI 安装之间迁移。
-- 为每个输出节点单独设置文件名前缀模板。
-- 在提交前生成本地预览，条数可在设置中调整。
-- 为 UNET、CLIP 和输出节点提供手动“定位”按钮。
-- 自动排除被识别为负面条件的 CLIP 文本节点。
-- 按批次跟踪任务状态，支持取消未完成任务和重试失败任务。
-
-例如，选择 3 个模型、2 个 LoRA、2 个上装值和 3 个下装值，会生成 36 个独立任务。
-
-每个任务只会在浏览器内临时复制一份 API JSON；插件不会创建新的可视化工作流，也不会修改或保存当前画布。只有点击 `提交任务` 后，任务才会通过 ComfyUI 的 `/prompt` 接口入队。
-
-## 安装
-
-1. 下载或克隆本仓库。
-2. 将整个目录复制到 ComfyUI 的 `custom_nodes` 目录，并保留目录名：
-
-   ```text
-   ComfyUI/custom_nodes/comfyui-orchestrator
-   ```
-
-3. 重启 ComfyUI。
-4. 刷新浏览器页面，在顶部菜单栏找到 `Batch` 控件组。
-5. 第一次打开工作流或切换工作流后，点击控件组上的刷新按钮 `⟳`。
-
-插件没有额外的 Python 运行时依赖，也不需要构建步骤。开发测试所需的 Node.js 依赖只使用 Node.js 自带的测试模块。
-
-## 使用流程
-
-### 1. 读取当前画布
-
-点击顶栏 `Batch` 控件组上的刷新按钮 `⟳`。面板只会处理当前画布中能够转换为 API 工作流、且未被禁用或旁路的节点。
-
-### 2. 选择 UNET 和模型
-
-在 `UNET 加载器` 下拉框中选择目标节点，点击右侧 `定位` 可以把画布定位到该节点并高亮它。
-
-在 `模型` 树中展开目录并勾选模型。勾选文件夹会递归选中其中的全部模型，部分选中时文件夹会显示半选状态。模型选项来自当前 ComfyUI 的 `UNETLoader` 节点定义。
-
-如果工作流包含 `LoraLoaderModelOnly`，在 `LoRA 加载器` 中选择目标节点，然后在 `LoRA` 树中按同样方式选择 LoRA。每个任务会把所选值写入该节点的 `lora_name`，不会改动 `strength_model`。没有 LoRA 节点时，LoRA 维度自动退化为一个空维度。
-
-### 3. 选择正面 CLIP 文本节点
-
-在 `CLIP 文本节点` 下拉框中选择要替换的文本节点。负面条件节点不会出现在这个列表中；如果需要确认节点位置，点击右侧的 `定位`。
-
-在 `文本模板` 中使用精确格式的占位符，例如：
-
-```text
-studio portrait of {{subject}}, soft daylight, neutral background
-```
-
-文本模板框会随内容自动增高，超过上限后转为框内滚动。
-
-`变量` 区默认有一个名为 `subject` 的变量。在变量名右侧点 `插入` 可把 `{{subject}}` 插入到文本光标处；点 `存入库` 可把该变量的全部值保存到变量库。
-
-在变量的输入框中键入值后回车即可添加，多个值也可以用换行或逗号一次粘贴。已添加的值以标签形式列出，点标签上的 `×` 移除。输入时会联想该变量名在库中已有的值。
-
-点 `+ 添加变量` 可以增加任意多个变量，模板随之可以写成：
-
-```text
-studio portrait, {{top}}, {{bottom}}, {{shoes}}
-```
-
-任务数是模型 × LoRA × 每个变量值数量的乘积，变量顺序就是展开顺序。变量名允许中文等 Unicode 字母，`{{上衣}}` 同样有效。
-
-配好一组变量后点 `保存组合` 可以命名保存，之后在 `变量库` 弹窗中一键载入，载入会替换主面板上的全部变量。
-
-### 4. 设置输出文件名
-
-勾选需要命名的输出节点。每个输出节点都有自己的文件名模板和 `定位` 按钮，因此多个 `SaveImage` 节点可以分别命名。
-
-默认模板：
-
-```text
-orchestrator/{{model}}_{{value}}_{{index}}
-```
-
-静态 `/` 可以在 ComfyUI 的输出目录下创建子目录。例如：
-
-```text
-orchestrator/{{model}}/{{value}}_{{index}}
-```
-
-点击顶栏的 `设置` 可以修改最大任务数、预览任务数、默认保存图片模板，以及是否启用 LoRA 维度、提交新批次前是否清空任务记录。设置只保存在当前浏览器的 `localStorage` 中，不会写入仓库；每个输出节点在主面板或设置面板中单独修改的模板也会被记住。
-
-### 5. 预览和提交
-
-点击 `生成预览` 后，预览区会展开，显示任务总数以及设置中指定数量的任务（默认前 5 个）的模型、LoRA、变量值和文件名。这个操作只在面板中生成预览，不会调用 `/prompt`，也不会入队。提交任务后预览区会自动收起，把空间让给任务记录。
-
-确认数量和命名后，点击 `提交任务`。插件会按顺序为每个组合发送一个 `/prompt` 请求，并在面板中轮询任务历史，显示入队、执行、完成或失败状态。
-
-`最大任务数` 默认是 500，用于避免误操作产生过大的批次；预览数量默认为 5，最多可设置为 50。两项都在顶栏的 `设置` 中调整。
-
-## 任务监看
-
-提交后，任务记录按批次分组，每批之前有一条分割线标明批次号、提交时间、任务数和已完成数。记录框内可独立横向滚动查看完整文件名，不会带动面板其它部分。
-
-轮询时会同时读取 ComfyUI 队列，因此正在执行的那一个会显示为「执行中」并高亮，其余排队任务显示「已入队」。
-
-工具栏上的 `取消` 会把本次记录中尚未完成的任务从 ComfyUI 队列移除；只有当正在执行的任务确实属于本插件时才额外调用中断，避免误停其它来源的任务。`重试` 会重新提交状态为失败的任务，沿用原批次的配置与文件名，重试结果仍归入原批次。`清空` 只清空面板上的记录，不影响已经在队列里的任务。
-
-为支持重试，每个批次会保留一份提交时的配置与基础工作流；重试时按任务序号重新展开，而不是为每个任务各存一份工作流 JSON。
-
-## 一个虚构示例
-
-以下模型名、文本值和提示词仅用于说明界面，不代表仓库内置模型，也不对应任何真实机器或工作流。
-
-| 配置项 | 示例 |
-| --- | --- |
-| UNET 模型 | `demo/aurora_v1.safetensors`、`demo/aurora_v2.safetensors` |
-| 文本模板 | `editorial portrait of {{subject}}, soft studio light` |
-| 文本值 | `red umbrella`、`yellow raincoat` |
-| 输出模板 | `orchestrator/{{model}}/{{value}}_{{index}}` |
-
-2 个模型 × 2 个文本值 = 4 个任务：
-
-```text
-001  aurora_v1 × red umbrella
-002  aurora_v1 × yellow raincoat
-003  aurora_v2 × red umbrella
-004  aurora_v2 × yellow raincoat
-```
-
-## 文件名模板
-
-支持的动态变量：
-
-| 变量 | 含义 |
-| --- | --- |
-| `{{model}}` | 当前选中的模型名；会清理路径和文件名中的不安全字符 |
-| `{{lora}}` | 当前选中的 LoRA 名；会清理路径和文件名中的不安全字符 |
-| `{{value}}` | 第一个变量的值；会清理路径和文件名中的不安全字符 |
-| `{{<key>}}` | 多变量槽位对应的完整文本，例如 `{{top}}` |
-| `{{<key>_label}}` | 多变量槽位对应的短文件名 label，例如 `{{top_label}}` |
-| `{{index}}` | 当前任务序号，从 `001` 开始 |
-| `{{seed}}` | 基础工作流中找到的第一个 seed（如果存在） |
-
-规则：
-
-- 模板不能为空。
-- 只能使用上表中的变量；变量名必须匹配 `\p{L}[\p{L}\p{N}_]*`，即以 Unicode 字母开头。
-- 绝对路径、盘符路径和 `..` 路径段会被拒绝。
-- 静态 `/` 只用于创建输出目录下的相对路径。
-- 动态值中的 Windows 保留字符会被替换为下划线。
-- ComfyUI 仍会按照输出节点自身的行为补充文件扩展名。
-
-建议多变量输出使用 label，避免把完整提示词写进文件名，例如：
-
-```text
-orchestrator/{{top_label}}_{{bottom_label}}_{{index}}
-```
-
-tags 只用于变量库搜索和筛选，不会自动拼入文件名。
-
-## 预览和提交的区别
-
-| 操作 | 会复制 API JSON | 会调用 `/prompt` | 会修改当前画布 |
-| --- | ---: | ---: | ---: |
-| `生成预览` | 是，临时 | 否 | 否 |
-| `提交任务` | 是，每个任务一份 | 是 | 否 |
-
-## 变量库、模板和迁移
-
-主面板上的 `变量库` 和 `模板库` 是两个独立弹窗。
-
-`变量库` 管理已保存的组合与单个变量值：支持按变量名、文本、label、备注搜索，按 tag 精确筛选，编辑或删除记录。`模板库` 管理命名模板和最近使用历史，每条模板可以就地 `预览` 完整内容、`加载` 到主面板、`编辑` 或删除。最近使用的每条记录可以 `预览`、`加载`，或用 `存为模板` 直接命名存入已保存模板——历史是自动记录的日志，不支持就地编辑，提升为正式模板后再走常规编辑路径。模板历史最多保留 100 条，按模板正文去重。
-
-变量库、组合、模板和历史保存在当前浏览器的 IndexedDB 数据库 `comfyui-batch-orchestrator-library`；面板设置和输出节点模板保存在当前浏览器的 `localStorage`。IndexedDB 不可用时仍可正常配置并提交批次，但变量库 CRUD、历史和迁移不可用。
-
-设置弹窗里的 `导出变量库 JSON` 会导出 schema `comfyui-batch-orchestrator-library`、当前版本号、变量、组合、模板和历史。导入默认合并，不清空当前库：相同 id 保留更新时间较新的记录，不同 id 但变量的 `key + text + label` 相同的记录会去重。导入 JSON 会先校验结构；失败时不会替换现有数据。
-
-## 故障排查
-
-- **面板没有出现**：确认目录位于 `custom_nodes/comfyui-orchestrator`，重启 ComfyUI 并刷新浏览器。
-- **面板显示读取失败**：先确保工作流已经打开，再点击顶栏的刷新按钮 `⟳`。
-- **模型或 LoRA 列表为空**：确认当前选择的是启用的 `UNETLoader` 或 `LoraLoaderModelOnly`，并确认 ComfyUI 能返回对应的节点选项；刷新 ComfyUI 页面后再试。
-- **没有可选的 CLIP 节点**：确认存在启用的 `CLIPTextEncode`；负面条件会被自动排除。
-- **提示找不到占位符**：变量名为 `subject` 时，模板中必须出现精确的 `{{subject}}`，包括大括号和大小写。
-- **变量库无法打开**：检查浏览器是否允许当前 ComfyUI 来源使用 IndexedDB；此时变量仍可正常输入和提交，只是无法保存到库。
-- **导入失败**：只能导入本扩展导出的 schema `comfyui-batch-orchestrator-library` JSON，且版本不能高于当前版本；格式错误不会覆盖现有数据。
-- **预览报错**：先检查模型、文本值、输出节点和最大任务数，再重新点击 `生成预览`。
-- **定位没有效果**：先点顶栏的刷新按钮 `⟳` 重新读取画布；定位按钮只操作当前打开的画布，不会改变工作流内容。
-- **设置没有保留**：设置保存在当前浏览器的 `localStorage`；如果浏览器禁用了站点存储，设置只能在当前页面暂时生效。
-
-## 当前限制
-
-- 只处理当前画布中能够转换为 API 工作流的启用节点。
-- LoRA 选择器只处理 `LoraLoaderModelOnly`，不修改其他 LoRA 节点类型。
-- 输出节点必须拥有 `filename_prefix` 输入；不具备该输入的自定义节点不会被列为可命名输出。
-- 任务按顺序提交，当前没有并发提交、暂停、恢复或持久化批次功能。
-- 面板任务记录保存在当前页面内；刷新页面后不会恢复插件自己的任务列表，队列中的任务本身不受影响。
-- 变量库、命名模板和最多 100 条模板历史保存在当前浏览器的 IndexedDB，不会自动同步到其他浏览器或 ComfyUI 安装；需要用 JSON 导入/导出迁移。
-- 负面 CLIP 的识别依赖连接输入名称或节点标题。使用完全自定义命名的复杂工作流时，建议检查自动发现结果。
-
-## 开发与测试
-
-仓库没有前端构建产物，浏览器直接加载 `web` 目录中的 ES module：
-
-```text
-__init__.py                  ComfyUI 扩展入口
-web/js/orchestrator.js       面板、预览、提交和状态轮询
-web/js/orchestrator-core.js  纯批处理逻辑
-web/js/orchestrator-library.js IndexedDB、变量库 CRUD 和 JSON 迁移
-web/css/orchestrator.css     面板样式
-test/                        Node.js 原生测试（核心和变量库纯逻辑）
-```
-
-运行测试：
-
-```bash
-npm test
-node --check web/js/orchestrator-core.js
-node --check web/js/orchestrator-library.js
-node --check web/js/orchestrator.js
-```
-
-## 实现说明
-
-以下几点是代码里不易一眼看出、改动时容易踩坑的约束。
-
-### 顶栏挂载
-
-面板的控件组注入 ComfyUI 顶部菜单栏，挂载逻辑有三条硬性要求：
-
-- **只插入一次，之后绝不移动。** 早期版本在插入后用 `getBoundingClientRect` 判断可见性，测得宽高为 0 就移除重试；页面初始布局尚未完成时必然测到 0，于是陷入插入→移除→再插入的循环，叠加 Crystools 监视器每秒更新 DOM 触发观察器，表现为菜单持续闪烁。
-- **顶栏容器以官方设置按钮组的父元素为准**（`app.menu.settingsGroup.element.parentElement`），不猜类名。
-- **排在 Crystools 左侧**：等它出现后插到它前面。Crystools 的容器 class 各版本不一，用 `[class*='crystools']` 前缀匹配，并限定在顶栏容器内查找——否则会命中它设置面板里的元素而插错位置。未安装 Crystools 时退回设置按钮组之前；顶栏是 Vue 异步渲染的，轮询有宽限期。
-
-### 变量名规则
-
-变量名允许中文等 Unicode 字母开头，`{{上衣}}`、`{{subject}}` 都合法，规则为 `/^\p{L}[\p{L}\p{N}_]*$/u`。`orchestrator-core.js` 与 `orchestrator-library.js` 两处必须保持一致，否则面板里能用的变量名存不进库。
-
-### 变量库版本
-
-导出文件带 `schema` 和 `version`。当前版本为 2，比 v1 多了 `variableSets`（组合变量）存储。导入时接受 v1 文件，缺失的存储按空数组处理；高于当前版本的文件会被拒绝，因为结构无法预知。IndexedDB 通过 `onupgradeneeded` 自动补建新存储。
-
-记录级的类型强制与必填校验统一在 `normalizeLibraryData` 中完成，导入路径只额外校验外层信封（schema、version、各存储必须是数组）。
-
-## 数据边界
-
-插件不提供外部云服务，也不包含遥测逻辑。它只读取当前 ComfyUI 前端可访问的画布和节点定义；点击提交后，工作流副本和参数会发送回当前 ComfyUI 实例。变量库、模板和历史只写入当前浏览器 IndexedDB；JSON 导入/导出是用户主动进行的本地迁移，不是服务端同步。
-
-相关 ComfyUI 文档：
-
-- [服务器通信路由](https://docs.comfy.org/development/comfyui-server/comms_routes)
-- [Workflow API 格式](https://docs.comfy.org/development/api-development/workflow-api-format)
-- [LoRA 加载器（仅模型）](https://github.com/Comfy-Org/embedded-docs/blob/main/comfyui_embedded_docs/docs/LoraLoaderModelOnly/zh.md)
-
-</details>
-
-<a id="english"></a>
-
-<details>
-<summary>English</summary>
+**English** · [简体中文](README.zh-CN.md)
 
 ## Overview
-
-ComfyUI Batch Orchestrator is a local batch-job extension for ComfyUI. It reads the executable workflow on the current canvas, lets you select multiple UNET models and LoRAs, replaces one or more text variables with reusable values, and expands the combinations as a model × LoRA × text-slot Cartesian product.
 
 It runs inside ComfyUI as a frontend extension rather than as a separate web service. It inserts a `Batch` button group into the ComfyUI topbar that opens the panel, and can:
 
@@ -302,6 +28,12 @@ For example, 3 selected models, 2 LoRAs, 2 top values, and 3 bottom values produ
 
 Each job is a temporary in-memory copy of the API JSON. The extension does not create a new visual workflow and does not modify or save the current canvas. Jobs are sent to ComfyUI through `/prompt` only after `Submit jobs` is clicked.
 
+## Requirements
+
+- A current ComfyUI release with the Vue frontend (the extension targets the latest version and carries no compatibility shims).
+- A modern browser with IndexedDB, `<dialog>`, and `structuredClone` support — the library features rely on them.
+- No Python dependencies, no build step, no runtime npm dependencies. Node.js is only needed to run the tests.
+
 ## Installation
 
 1. Download or clone this repository.
@@ -314,8 +46,6 @@ Each job is a temporary in-memory copy of the API JSON. The extension does not c
 3. Restart ComfyUI.
 4. Refresh the browser and look for the `Batch` button group in the topbar.
 5. Click the refresh button `⟳` in that group after opening or switching workflows.
-
-The extension has no additional Python runtime dependencies and does not require a build step. The optional development test command uses Node.js's built-in test module.
 
 ## Usage
 
@@ -461,6 +191,85 @@ Variables, combinations, templates, and history are stored in the current browse
 
 `Export library JSON` in the settings dialog writes the `comfyui-batch-orchestrator-library` schema, the current version, variables, combinations, templates, and history. Imports merge by default rather than clearing the current library: equal ids keep the newer timestamp, and variable records with equal `key + text + label` are deduplicated. The JSON is validated before replacement; a failed import leaves existing data unchanged.
 
+## Architecture
+
+### Module layout
+
+```text
+__init__.py                    ComfyUI extension entry point; only exposes the web directory
+web/js/orchestrator.js         Panel, topbar mounting, preview, submission, polling, library UI
+web/js/orchestrator-core.js    Pure batch logic: discovery, expansion, filename rendering
+web/js/orchestrator-library.js IndexedDB storage, normalization, JSON import/export
+web/css/orchestrator.css       Panel styling
+test/                          Native Node.js tests for the two pure modules
+```
+
+The split follows one rule: everything that can be tested without a DOM lives in `orchestrator-core.js` or `orchestrator-library.js`, and everything that touches `document`, `app`, or `api` lives in `orchestrator.js`. That is why the two lower modules have full test coverage and the panel has none — they hold all the logic worth testing.
+
+### Data flow
+
+```text
+canvas ──app.graphToPrompt()──> API JSON
+                                   │
+                   discoverTargets(prompt, graphNodes)
+                                   │
+                   ┌───────────────┴────────────────┐
+              UNET / LoRA / CLIP / output targets   │
+                                   │                │
+                        user selection in panel ────┘
+                                   │
+                        expandJobs(prompt, config)   generator
+                                   │
+              { index, model, lora, variables, filenamePrefixes, prompt }
+                                   │
+                 preview (panel only)   ──or──   POST /prompt per job
+                                                        │
+                                          poll /history/{id} + /queue
+                                                        │
+                                                   task log UI
+```
+
+`expandJobs` is a generator and is fully deterministic: the same `(prompt, config)` pair always yields the same jobs in the same order. Preview, submission, and retry all call it, which is what makes index-based retry possible without storing a workflow JSON per task.
+
+### State
+
+| Where | What | Lifetime |
+| --- | --- | --- |
+| In-memory `state` | Discovered targets, selections, tasks, batch snapshots | Current page |
+| `localStorage` | Panel settings and per-output filename templates | Current browser |
+| IndexedDB | Variables, combinations, templates, template history | Current browser |
+| ComfyUI server | Queued and executing jobs | Server-side |
+
+Nothing is written to the repository, and the current canvas is never modified or saved.
+
+### Notifications
+
+Every user-facing message goes through one `setStatus` call, which forwards to `app.extensionManager.toast.add`. Nothing is ever written into the topbar or a status element — the panel has no status line at all.
+
+## Implementation notes
+
+These constraints are not obvious from the code and are easy to break.
+
+### Topbar mounting
+
+The control group is injected into the ComfyUI top menu bar. Three hard requirements:
+
+- **Insert once, never move afterwards.** An earlier version checked `getBoundingClientRect` after insertion and removed the element when it measured zero. Initial layout has not settled at that point, so it always measured zero, producing an insert → remove → insert loop. Combined with the Crystools monitor mutating the DOM every second to refresh its readouts, this made the menu flicker continuously.
+- **Locate the topbar container via the official settings button group's parent** (`app.menu.settingsGroup.element.parentElement`) rather than guessing class names.
+- **Sit to the left of Crystools**: wait for it, then insert before it. Its container class differs across versions, so matching uses the `[class*='crystools']` prefix, scoped to the topbar container — an unscoped query also matches elements inside its settings panel and would insert in the wrong place. Without Crystools installed, fall back to inserting before the settings button group. The topbar is rendered asynchronously by Vue, so polling has a grace period.
+
+The panel element is built before the topbar is attached to the document, so the internal `byId` helper falls back to querying the detached topbar subtree. Without that fallback every listener binding silently resolves to `null` and the UI renders but does not respond.
+
+### Variable name rules
+
+Variable names may start with any Unicode letter, so both `{{subject}}` and `{{上衣}}` are valid; the rule is `/^\p{L}[\p{L}\p{N}_]*$/u`. It must stay identical in `orchestrator-core.js` and `orchestrator-library.js`, otherwise names accepted by the panel cannot be saved to the library.
+
+### Library version
+
+Exports carry `schema` and `version`. The current version is 2, adding the `variableSets` store on top of v1. Imports accept v1 files and treat missing stores as empty arrays; files newer than the current version are rejected because their structure cannot be anticipated. IndexedDB creates the new store automatically through `onupgradeneeded`.
+
+Per-record type coercion and required-field validation all happen in `normalizeLibraryData`; the import path only additionally validates the outer envelope (schema, version, and that each store is an array).
+
 ## Troubleshooting
 
 - **The panel is missing**: confirm the directory is `custom_nodes/comfyui-orchestrator`, restart ComfyUI, and refresh the browser.
@@ -486,18 +295,7 @@ Variables, combinations, templates, and history are stored in the current browse
 
 ## Development and testing
 
-There is no frontend build artifact; ComfyUI loads the ES modules directly from `web`:
-
-```text
-__init__.py                  ComfyUI extension entry point
-web/js/orchestrator.js       Panel, preview, submission, and polling
-web/js/orchestrator-core.js  Pure batch logic
-web/js/orchestrator-library.js IndexedDB CRUD and JSON migration helpers
-web/css/orchestrator.css     Panel styling
-test/                        Native Node.js tests for core and library logic
-```
-
-Run the checks:
+There is no frontend build artifact; ComfyUI loads the ES modules directly from `web`. Run the checks:
 
 ```bash
 npm test
@@ -506,27 +304,7 @@ node --check web/js/orchestrator-library.js
 node --check web/js/orchestrator.js
 ```
 
-## Implementation notes
-
-These constraints are not obvious from the code and are easy to break.
-
-### Topbar mounting
-
-The control group is injected into the ComfyUI top menu bar. Three hard requirements:
-
-- **Insert once, never move afterwards.** An earlier version checked `getBoundingClientRect` after insertion and removed the element when it measured zero. Initial layout has not settled at that point, so it always measured zero, producing an insert → remove → insert loop. Combined with the Crystools monitor mutating the DOM every second to refresh its readouts, this made the menu flicker continuously.
-- **Locate the topbar container via the official settings button group's parent** (`app.menu.settingsGroup.element.parentElement`) rather than guessing class names.
-- **Sit to the left of Crystools**: wait for it, then insert before it. Its container class differs across versions, so matching uses the `[class*='crystools']` prefix, scoped to the topbar container — an unscoped query also matches elements inside its settings panel and would insert in the wrong place. Without Crystools installed, fall back to inserting before the settings button group. The topbar is rendered asynchronously by Vue, so polling has a grace period.
-
-### Variable name rules
-
-Variable names may start with any Unicode letter, so both `{{subject}}` and `{{上衣}}` are valid; the rule is `/^\p{L}[\p{L}\p{N}_]*$/u`. It must stay identical in `orchestrator-core.js` and `orchestrator-library.js`, otherwise names accepted by the panel cannot be saved to the library.
-
-### Library version
-
-Exports carry `schema` and `version`. The current version is 2, adding the `variableSets` store on top of v1. Imports accept v1 files and treat missing stores as empty arrays; files newer than the current version are rejected because their structure cannot be anticipated. IndexedDB creates the new store automatically through `onupgradeneeded`.
-
-Per-record type coercion and required-field validation all happen in `normalizeLibraryData`; the import path only additionally validates the outer envelope (schema, version, and that each store is an array).
+`npm test` uses Node.js's built-in test runner; there are no npm dependencies to install.
 
 ## Data boundary
 
@@ -537,5 +315,3 @@ Relevant ComfyUI documentation:
 - [Server communication routes](https://docs.comfy.org/development/comfyui-server/comms_routes)
 - [Workflow API format](https://docs.comfy.org/development/api-development/workflow-api-format)
 - [LoRA Loader (Model Only)](https://github.com/Comfy-Org/embedded-docs/blob/main/comfyui_embedded_docs/docs/LoraLoaderModelOnly/zh.md)
-
-</details>
