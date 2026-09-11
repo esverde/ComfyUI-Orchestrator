@@ -73,7 +73,6 @@ const state = {
   targets: { unet: [], lora: [], text: [], outputs: [] },
   tasks: [],
   batches: new Map(),
-  batchSeq: 0,
   taskOrder: "desc",
   templateDirty: false,
   pollTimer: null,
@@ -122,11 +121,11 @@ function button(text, onClick, { className = "", title = "", ariaLabel = "" } = 
   return element;
 }
 
-function emptyNote(container, text, className = "cbo-library-empty") {
-  const note = document.createElement("div");
-  note.className = className;
-  note.textContent = text;
-  container.append(note);
+function textRow(container, text, className = "cbo-library-empty") {
+  const row = document.createElement("div");
+  row.className = className;
+  row.textContent = text;
+  container.append(row);
 }
 
 function libraryRow(title, meta, buttons) {
@@ -171,12 +170,12 @@ function renderVariableRecords() {
   if (!container) return;
   container.replaceChildren();
   if (!state.library.ready) {
-    emptyNote(container, "IndexedDB 不可用，变量库管理暂不可用；快速输入仍可使用。");
+    textRow(container, "IndexedDB 不可用，变量库管理暂不可用；快速输入仍可使用。");
     return;
   }
   const records = filteredVariableRecords();
   if (!records.length) {
-    emptyNote(container, "没有匹配的变量值。");
+    textRow(container, "没有匹配的变量值。");
     return;
   }
   for (const record of records) {
@@ -267,7 +266,7 @@ function addSlotValue(slot, text) {
 function renderSlotValues(container, slot) {
   container.replaceChildren();
   if (!slot.values.length) {
-    emptyNote(container, "还没有值。在上方输入后回车添加。", "cbo-variable-hint");
+    textRow(container, "还没有值。在上方输入后回车添加。", "cbo-variable-hint");
     return;
   }
   slot.values.forEach((value, valueIndex) => {
@@ -504,11 +503,11 @@ function renderVariableSets() {
   if (!container) return;
   container.replaceChildren();
   if (!state.library.ready) {
-    emptyNote(container, "IndexedDB 不可用，组合保存暂不可用。");
+    textRow(container, "IndexedDB 不可用，组合保存暂不可用。");
     return;
   }
   if (!state.library.variableSets.length) {
-    emptyNote(container, "还没有保存的组合。在主面板配好变量后点「保存组合」。");
+    textRow(container, "还没有保存的组合。在主面板配好变量后点「保存组合」。");
     return;
   }
   for (const record of state.library.variableSets) {
@@ -526,11 +525,11 @@ function renderTemplates() {
   if (!container) return;
   container.replaceChildren();
   if (!state.library.ready) {
-    emptyNote(container, "IndexedDB 不可用，模板保存和历史暂不可用。");
+    textRow(container, "IndexedDB 不可用，模板保存和历史暂不可用。");
     return;
   }
   if (!state.library.templates.length) {
-    emptyNote(container, "还没有已保存模板。");
+    textRow(container, "还没有已保存模板。");
     return;
   }
   for (const record of state.library.templates) {
@@ -548,7 +547,7 @@ function renderTemplateHistory() {
   if (!container) return;
   container.replaceChildren();
   if (!state.library.templateHistory.length) {
-    emptyNote(container, "还没有模板使用历史。");
+    textRow(container, "还没有模板使用历史。");
     return;
   }
   for (const record of state.library.templateHistory) {
@@ -743,6 +742,14 @@ async function currentPrompt() {
   return prompt;
 }
 
+function postJson(path, body) {
+  return api.fetchApi(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
 async function getJson(path) {
   const response = await api.fetchApi(path, { cache: "no-store" });
   if (!response.ok) throw new Error(`${path} 返回 HTTP ${response.status}`);
@@ -869,7 +876,7 @@ function renderValueTree(container, values, selectedValuesList, emptyLabel, root
   container.setAttribute("role", "tree");
   const tree = buildModelTree(values);
   if (!tree.length) {
-    emptyNote(container, emptyLabel, "cbo-tree-empty");
+    textRow(container, emptyLabel, "cbo-tree-empty");
     return;
   }
   appendTreeNode(
@@ -953,7 +960,7 @@ function renderOutputTemplateSettings() {
   if (!container) return;
   container.replaceChildren();
   if (!state.targets.outputs.length) {
-    emptyNote(container, "刷新画布后可为每个输出节点设置单独模板。", "cbo-settings-hint");
+    textRow(container, "刷新画布后可为每个输出节点设置单独模板。", "cbo-settings-hint");
     return;
   }
   state.targets.outputs.forEach((target) => {
@@ -1239,7 +1246,6 @@ function pendingTasks() {
 function clearTasks() {
   state.tasks = [];
   state.batches.clear();
-  state.batchSeq = 0;
   renderTasks();
 }
 
@@ -1290,11 +1296,7 @@ async function cancelPendingTasks() {
   if (!pending.length) return;
   if (!window.confirm(`确定取消 ${pending.length} 个未完成任务吗？`)) return;
   try {
-    await api.fetchApi("/queue", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ delete: pending.map((task) => task.promptId) }),
-    });
+    await postJson("/queue", { delete: pending.map((task) => task.promptId) });
     // /interrupt 会中断当前执行的任何任务，先确认正在跑的确实是我们的，避免误杀。
     const running = await currentRunningId();
     if (pending.some((task) => task.promptId === running)) {
@@ -1317,20 +1319,15 @@ function renderTasks() {
   const recent = state.tasks.slice(-50);
   if (state.taskOrder === "desc") recent.reverse();
   const orderButton = byId("cbo-task-order");
-  if (orderButton) {
-    const descending = state.taskOrder === "desc";
-    orderButton.textContent = descending ? "新→旧" : "旧→新";
-    orderButton.title = descending ? "当前最新任务在前，点击切换为最早任务在前" : "当前最早任务在前，点击切换为最新任务在前";
-    orderButton.setAttribute("aria-label", orderButton.title);
-  }
+  const descending = state.taskOrder === "desc";
+  orderButton.textContent = descending ? "新→旧" : "旧→新";
+  orderButton.title = descending ? "当前最新任务在前，点击切换为最早任务在前" : "当前最早任务在前，点击切换为最新任务在前";
+  orderButton.setAttribute("aria-label", orderButton.title);
   let lastBatch = null;
   for (const task of recent) {
     if (task.batch !== lastBatch) {
       lastBatch = task.batch;
-      const divider = document.createElement("div");
-      divider.className = "cbo-task-batch";
-      divider.textContent = batchLabel(task.batch);
-      list.append(divider);
+      textRow(list, batchLabel(task.batch), "cbo-task-batch");
     }
     const row = document.createElement("div");
     const status = document.createElement("span");
@@ -1345,7 +1342,7 @@ function renderTasks() {
     row.append(status, main);
     list.append(row);
   }
-  const failed = state.tasks.filter((task) => task.status === "failed").length;
+  const failed = failedTasks().length;
   const submitted = state.tasks.length - failed;
   byId("cbo-task-summary").textContent = state.tasks.length
     ? `已处理 ${state.tasks.length}；成功提交 ${submitted}；失败 ${failed}`
@@ -1358,11 +1355,7 @@ function renderTasks() {
 async function submitPrompt(prompt) {
   const body = { prompt };
   if (api.clientId) body.client_id = api.clientId;
-  const response = await api.fetchApi("/prompt", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+  const response = await postJson("/prompt", body);
   const data = await response.json();
   if (!response.ok || data.error || !data.prompt_id) {
     const detail = data.error?.message || data.error || `HTTP ${response.status}`;
@@ -1413,8 +1406,7 @@ async function submit() {
     await recordTemplateUse(config.template);
     if (state.settings.clearTasksOnSubmit) clearTasks();
     byId("cbo-preview-box").open = false;
-    state.batchSeq += 1;
-    const batch = state.batchSeq;
+    const batch = state.batches.size + 1;
     const submittedAt = Date.now();
     state.batches.set(batch, { config, prompt: state.prompt });
     let processed = 0;
