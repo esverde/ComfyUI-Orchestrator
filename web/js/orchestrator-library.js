@@ -6,10 +6,6 @@ const DB_NAME = "comfyui-batch-orchestrator-library";
 const STORE_NAMES = ["variables", "templates", "templateHistory"];
 const VARIABLE_KEY = /^[A-Za-z][A-Za-z0-9_]*$/;
 
-function nowValue(value) {
-  return Number.isFinite(value) ? value : Date.now();
-}
-
 function makeId(prefix) {
   if (typeof globalThis.crypto?.randomUUID === "function") return globalThis.crypto.randomUUID();
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
@@ -95,18 +91,18 @@ function normalizeHistoryRecord(value, now) {
   };
 }
 
-function deduplicateById(records, timestampName) {
-  const byId = new Map();
-  for (const record of records) {
-    const current = byId.get(record.id);
-    if (!current || record[timestampName] >= current[timestampName]) byId.set(record.id, record);
+function mergeById(current, incoming, timestampName) {
+  const records = new Map(current.map((record) => [record.id, record]));
+  for (const record of incoming) {
+    const existing = records.get(record.id);
+    if (!existing || record[timestampName] >= existing[timestampName]) records.set(record.id, record);
   }
-  return [...byId.values()];
+  return [...records.values()];
 }
 
 function normalizeHistory(records, now) {
   const byBody = new Map();
-  for (const record of deduplicateById(records.map((item) => normalizeHistoryRecord(item, now)), "lastUsedAt")) {
+  for (const record of mergeById([], records.map((item) => normalizeHistoryRecord(item, now)), "lastUsedAt")) {
     const current = byBody.get(record.body);
     if (!current || record.lastUsedAt >= current.lastUsedAt) byBody.set(record.body, record);
   }
@@ -117,15 +113,14 @@ function normalizeHistory(records, now) {
 
 export function normalizeLibraryData(value = {}, now = Date.now()) {
   const source = recordObject(value, "变量库");
-  const timestamp = nowValue(now);
   const variables = Array.isArray(source.variables)
-    ? deduplicateById(source.variables.map((item) => normalizeVariableRecord(item, timestamp)), "updatedAt")
+    ? mergeById([], source.variables.map((item) => normalizeVariableRecord(item, now)), "updatedAt")
     : [];
   const templates = Array.isArray(source.templates)
-    ? deduplicateById(source.templates.map((item) => normalizeTemplateRecord(item, timestamp)), "updatedAt")
+    ? mergeById([], source.templates.map((item) => normalizeTemplateRecord(item, now)), "updatedAt")
     : [];
   const templateHistory = Array.isArray(source.templateHistory)
-    ? normalizeHistory(source.templateHistory, timestamp)
+    ? normalizeHistory(source.templateHistory, now)
     : [];
   return {
     schema: LIBRARY_SCHEMA,
@@ -134,15 +129,6 @@ export function normalizeLibraryData(value = {}, now = Date.now()) {
     templates,
     templateHistory,
   };
-}
-
-function mergeById(current, incoming, timestampName) {
-  const records = new Map(current.map((record) => [record.id, record]));
-  for (const record of incoming) {
-    const existing = records.get(record.id);
-    if (!existing || record[timestampName] >= existing[timestampName]) records.set(record.id, record);
-  }
-  return [...records.values()];
 }
 
 function deduplicateVariableContent(records) {
@@ -165,7 +151,7 @@ export function mergeLibraryData(current = {}, incoming = {}, now = Date.now()) 
     templates: mergeById(left.templates, right.templates, "updatedAt"),
     templateHistory: normalizeHistory(
       mergeById(left.templateHistory, right.templateHistory, "lastUsedAt"),
-      nowValue(now),
+      now,
     ),
   };
 }
@@ -182,36 +168,6 @@ function assertArrayEnvelope(source) {
   }
 }
 
-function assertOptionalType(record, name, type, label) {
-  if (record[name] !== undefined && typeof record[name] !== type) {
-    throw new Error(`${label}字段 ${name} 类型无效`);
-  }
-}
-
-function validateExportRecords(source) {
-  for (const record of source.variables) {
-    recordObject(record, "变量");
-    for (const name of ["id", "key", "text", "label", "note"]) assertOptionalType(record, name, "string", "变量");
-    if (record.tags !== undefined && (!Array.isArray(record.tags) || record.tags.some((tag) => typeof tag !== "string"))) {
-      throw new Error("变量字段 tags 类型无效");
-    }
-    for (const name of ["createdAt", "updatedAt"]) assertOptionalType(record, name, "number", "变量");
-  }
-  for (const record of source.templates) {
-    recordObject(record, "模板");
-    for (const name of ["id", "name", "body"]) assertOptionalType(record, name, "string", "模板");
-    if (record.tags !== undefined && (!Array.isArray(record.tags) || record.tags.some((tag) => typeof tag !== "string"))) {
-      throw new Error("模板字段 tags 类型无效");
-    }
-    for (const name of ["createdAt", "updatedAt", "lastUsedAt"]) assertOptionalType(record, name, "number", "模板");
-  }
-  for (const record of source.templateHistory) {
-    recordObject(record, "模板历史");
-    for (const name of ["id", "name", "body"]) assertOptionalType(record, name, "string", "模板历史");
-    assertOptionalType(record, "lastUsedAt", "number", "模板历史");
-  }
-}
-
 export function parseLibraryExport(text) {
   let source;
   try {
@@ -219,21 +175,16 @@ export function parseLibraryExport(text) {
   } catch {
     throw new Error("变量库 JSON 格式无效");
   }
-  try {
-    assertArrayEnvelope(source);
-    validateExportRecords(source);
-    return normalizeLibraryData(source);
-  } catch (error) {
-    if (error instanceof Error) throw error;
-    throw new Error("变量库导入格式无效");
-  }
+  assertArrayEnvelope(source);
+  // normalizeLibraryData 已对每条记录做类型强制与必填校验，失败时抛出带字段名的错误。
+  return normalizeLibraryData(source);
 }
 
 export function serializeLibrary(value, now = Date.now()) {
   const data = normalizeLibraryData(value, now);
   return JSON.stringify({
     ...data,
-    exportedAt: new Date(nowValue(now)).toISOString(),
+    exportedAt: new Date(now).toISOString(),
   }, null, 2);
 }
 

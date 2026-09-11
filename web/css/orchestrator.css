@@ -137,8 +137,7 @@
 
 .cbo-body select[multiple] { min-height: 112px; }
 .cbo-body textarea { resize: vertical; }
-.cbo-model-tree,
-.cbo-lora-tree {
+.cbo-tree {
   min-height: 112px;
   max-height: 240px;
   overflow: auto;
@@ -148,12 +147,9 @@
   border: 1px solid var(--cbo-border);
   border-radius: 4px;
 }
-.cbo-model-tree-row,
-.cbo-lora-tree-row { display: flex; align-items: center; gap: 4px; min-height: 25px; }
-.cbo-model-tree-children,
-.cbo-lora-tree-children { margin-left: 18px; }
-.cbo-model-tree-toggle,
-.cbo-lora-tree-toggle {
+.cbo-tree-row { display: flex; align-items: center; gap: 4px; min-height: 25px; }
+.cbo-tree-children { margin-left: 18px; }
+.cbo-tree-toggle {
   flex: 0 0 18px;
   width: 18px;
   height: 20px;
@@ -165,14 +161,10 @@
   cursor: pointer;
   line-height: 1;
 }
-.cbo-model-tree-toggle:hover,
-.cbo-model-tree-toggle:focus-visible,
-.cbo-lora-tree-toggle:hover,
-.cbo-lora-tree-toggle:focus-visible { color: var(--cbo-fg); background: var(--cbo-hover); }
-.cbo-model-tree-spacer,
-.cbo-lora-tree-spacer { flex: 0 0 18px; width: 18px; }
-.cbo-model-tree-label,
-.cbo-lora-tree-label {
+.cbo-tree-toggle:hover,
+.cbo-tree-toggle:focus-visible { color: var(--cbo-fg); background: var(--cbo-hover); }
+.cbo-tree-spacer { flex: 0 0 18px; width: 18px; }
+.cbo-tree-label {
   display: flex !important;
   align-items: center;
   min-width: 0;
@@ -181,16 +173,11 @@
   margin: 0 !important;
   cursor: pointer;
 }
-.cbo-model-tree-label input,
-.cbo-lora-tree-label input { display: inline-block; flex: 0 0 auto; width: auto; margin: 0; padding: 0; }
-.cbo-model-tree-label span,
-.cbo-lora-tree-label span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cbo-model-tree-folder > .cbo-model-tree-label,
-.cbo-lora-tree-folder > .cbo-lora-tree-label { font-weight: 600; }
-.cbo-model-tree-row:focus-within,
-.cbo-lora-tree-row:focus-within { outline: 1px solid var(--cbo-focus); outline-offset: -1px; border-radius: 3px; }
-.cbo-model-tree-empty,
-.cbo-lora-tree-empty { padding: 10px 6px; color: var(--cbo-muted); font-size: 11px; }
+.cbo-tree-label input { display: inline-block; flex: 0 0 auto; width: auto; margin: 0; padding: 0; }
+.cbo-tree-label span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cbo-tree-folder > .cbo-tree-label { font-weight: 600; }
+.cbo-tree-row:focus-within { outline: 1px solid var(--cbo-focus); outline-offset: -1px; border-radius: 3px; }
+.cbo-tree-empty { padding: 10px 6px; color: var(--cbo-muted); font-size: 11px; }
 .cbo-node-control { display: flex; align-items: center; gap: 6px; }
 .cbo-node-control select { flex: 1; min-width: 0; }
 .cbo-node-control .cbo-locate { margin-top: 3px; padding: 5px 7px; }

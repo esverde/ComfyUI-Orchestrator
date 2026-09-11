@@ -165,12 +165,6 @@ export function replacePlaceholder(template, variable, value) {
   return String(template).split(placeholder).join(String(value));
 }
 
-function cloneJson(value) {
-  return typeof structuredClone === "function"
-    ? structuredClone(value)
-    : JSON.parse(JSON.stringify(value));
-}
-
 function dynamicToken(value) {
   const base = String(value ?? "")
     .replaceAll("\\", "/")
@@ -266,15 +260,13 @@ export function* expandJobs(prompt, config) {
     }
   }
 
-  const outputs = config.outputs
-    ? config.outputs.map((output) => ({ id: String(output.id), template: output.template }))
-    : [...(config.outputIds || [])].map((id) => ({ id: String(id), template: config.filenameTemplate }));
+  const outputs = (config.outputs || []).map((output) => ({ id: String(output.id), template: output.template }));
   const total = countJobs(models, loras, ...variables.map(({ values: slotValues }) => slotValues));
   let index = 1;
   for (const model of models) {
     for (const lora of loras) {
       for (const combination of variableCombinations(variables)) {
-        const jobPrompt = cloneJson(prompt);
+        const jobPrompt = structuredClone(prompt);
         jobPrompt[unetId].inputs.unet_name = model;
         if (loraId) jobPrompt[loraId].inputs.lora_name = lora;
         const replacements = Object.fromEntries(combination.map((item) => [item.key, item.text]));
@@ -312,7 +304,6 @@ export function* expandJobs(prompt, config) {
           lora,
           value,
           variables: combination,
-          filenamePrefix: filenamePrefixes[0]?.prefix || "",
           filenamePrefixes,
           prompt: jobPrompt,
         };
